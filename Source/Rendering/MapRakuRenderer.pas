@@ -6,35 +6,13 @@ interface
 
 uses
   System.Skia, System.SysUtils, System.Types, System.UITypes, Vcl.Graphics,
-  MapRakuDocument;
+  MapRakuDocument, MapRakuRenderBuffer;
 
 type
-  TVectArtRgbaPixel = packed record
-    R: Byte; // ストレートアルファ合成前の赤成分。
-    G: Byte; // ストレートアルファ合成前の緑成分。
-    B: Byte; // ストレートアルファ合成前の青成分。
-    A: Byte; // 0を透明、255を不透明とするアルファ成分。
-  end;
-  PVectArtRgbaPixel = ^TVectArtRgbaPixel;
-
-  TVectArtRenderBuffer = class
-  private
-    FHeight: Integer;
-    FPixels: TArray<TVectArtRgbaPixel>;
-    FWidth: Integer;
-    function GetData: PVectArtRgbaPixel;
-    function GetPixelCount: NativeInt;
-    function GetStride: NativeInt;
-  public
-    procedure Clear;
-    procedure SetSize(AWidth, AHeight: Integer);
-    property Data: PVectArtRgbaPixel read GetData;
-    property Height: Integer read FHeight;
-    property PixelCount: NativeInt read GetPixelCount;
-    property Pixels: TArray<TVectArtRgbaPixel> read FPixels;
-    property Stride: NativeInt read GetStride;
-    property Width: Integer read FWidth;
-  end;
+  // 既存利用側の型名を保ち、画素の管理責務はバッファユニットへ集約する。
+  TVectArtRgbaPixel = MapRakuRenderBuffer.TVectArtRgbaPixel;
+  PVectArtRgbaPixel = MapRakuRenderBuffer.PVectArtRgbaPixel;
+  TVectArtRenderBuffer = MapRakuRenderBuffer.TVectArtRenderBuffer;
 
 // Canvas背景を含めず、図形だけを透明RGBA8へ描画する。
 // MinimumStrokeWidthは編集補助用の論理座標幅で、0ならDocumentの線幅を変更しない。
@@ -74,187 +52,10 @@ uses
   MapRakuFilters, MapRakuLayerGeometry, MapRakuPathOperations,
   MapRakuPaintRenderer, MapRakuPatternRenderer,
   MapRakuPathRenderer, MapRakuRailRenderer, MapRakuShapePath, MapRakuTextGeometry,
-  MapRakuTextPathGeometry, MapRakuVariableWidthRenderer, MapRakuCrossings;
+  MapRakuTextPathGeometry, MapRakuVariableWidthRenderer, MapRakuCrossingRenderer;
 
 const
-  MAX_RENDER_DIMENSION = 16384;
   SKIA_DEFAULT_STROKE_MITER_LIMIT = 4.0;
-
-type
-  TMapCrossingVisual = record
-    UpperId, LowerId: string;
-    Cut: ISkPath;
-    Marks: ISkPath;
-  end;
-  TMapCrossingRenderContext = class
-  private
-    FVisuals: TArray<TMapCrossingVisual>;
-    FMarkColor: TAlphaColor;
-    FCanvasPath: ISkPath;
-  public
-    constructor Create(Document: TVectArtDocument);
-    procedure ClipLower(const Canvas: ISkCanvas; Layer: TVectArtLayer);
-    procedure DrawMarks(const Canvas: ISkCanvas; Layer: TVectArtLayer;
-      Opacity: Single);
-  end;
-
-constructor TMapCrossingRenderContext.Create(Document: TVectArtDocument);
-var C: TMapRakuCrossing; V: TMapCrossingVisual; Upper, Lower: TVectArtPathLayer;
-  T, U, N, P: TPointF; Points: TArray<TPointF>;
-  Distance, LowerDistance, HalfLength, Margin, Sine, Cosine, UW, LW, Len, Offset: Single;
-  Relation: TMapRakuCrossingRelation; Builder, Marks: ISkPathBuilder;
-  Stroke: ISkPaint; I, Side: Integer;
-  function FindIn(Layer: TVectArtLayer; const Id: string): TVectArtPathLayer;
-  var K: Integer;
-  begin
-    Result:=nil;
-    if (Layer is TVectArtPathLayer) and (Layer.PersistentId=Id) then
-      Exit(TVectArtPathLayer(Layer));
-    if Layer is TMapRakuGroupLayer then
-      for K:=0 to TMapRakuGroupLayer(Layer).ChildCount-1 do begin
-        Result:=FindIn(TMapRakuGroupLayer(Layer)[K],Id);
-        if Result<>nil then Exit;
-      end;
-  end;
-  function Find(const Id: string): TVectArtPathLayer;
-  var K: Integer;
-  begin
-    Result:=nil;
-    for K:=1 to Document.LayerCount-1 do begin
-      Result:=FindIn(Document[K],Id); if Result<>nil then Exit;
-    end;
-  end;
-begin
-  inherited Create;
-  Builder:=TSkPathBuilder.Create;
-  Builder.AddRect(TRectF.Create(-Document.CanvasLayer.Width*0.5,
-    -Document.CanvasLayer.Height*0.5,Document.CanvasLayer.Width*0.5,
-    Document.CanvasLayer.Height*0.5));
-  FCanvasPath:=Builder.Detach;
-  FMarkColor:=TAlphaColorRec.Black;
-  if ColorToRGB(Document.CanvasLayer.BackgroundColor)=clBlack then
-    FMarkColor:=TAlphaColorRec.White;
-  for C in CalculateMapRakuCrossings(Document) do
-  begin
-    if not (C.Kind in [mckBridge,mckOverpass,mckRailOverpass,
-      mckUnderpass,mckTunnel,mckRailroadCrossing]) then Continue;
-    V:=Default(TMapCrossingVisual); V.UpperId:=C.UpperObjectId;
-    if C.UpperObjectId=C.ObjectAId then begin
-      V.LowerId:=C.ObjectBId; T:=C.TangentA; U:=C.TangentB; Distance:=C.DistanceA;
-      LowerDistance:=C.DistanceB;
-    end else begin
-      V.LowerId:=C.ObjectAId; T:=C.TangentB; U:=C.TangentA; Distance:=C.DistanceB;
-      LowerDistance:=C.DistanceA;
-    end;
-    Upper:=Find(V.UpperId); Lower:=Find(V.LowerId);
-    if (Upper=nil) or (Lower=nil) then Continue;
-    UW:=MapCrossingPathWidth(Upper); LW:=MapCrossingPathWidth(Lower);
-    if C.Kind=mckRailroadCrossing then begin
-      // 平面の踏切は実際の線路模様だけを優先し、立体交差用の余白を作らない。
-      // 全経路から模様を作ることでJRの白黒・枕木の位相も途中で変えない。
-      if not ((Upper.MapElement='jr') or (Upper.MapElement='rail')) then Continue;
-      Points:=MapCrossingPathSection(Upper,0,1E20);
-      if Length(Points)<2 then Continue;
-      Builder:=TSkPathBuilder.Create; Builder.MoveTo(Points[0]);
-      for I:=1 to High(Points) do Builder.LineTo(Points[I]);
-      Stroke:=TSkPaint.Create(TSkPaintStyle.Stroke);
-      Stroke.StrokeWidth:=UW; Stroke.StrokeJoin:=TSkStrokeJoin.Round;
-      if Upper.MapElement='rail' then Stroke.StrokeWidth:=Max(1,UW*0.15);
-      V.Cut:=Stroke.GetFillPath(Builder.Snapshot);
-      FVisuals:=FVisuals+[V];
-      if Upper.MapElement='rail' then begin
-        Stroke.StrokeWidth:=UW;
-        Stroke.PathEffect:=TSkPathEffect.MakeDash([1.5,Max(3,UW*0.8)],0);
-        V.Cut:=Stroke.GetFillPath(Builder.Detach);
-        FVisuals:=FVisuals+[V];
-      end;
-      Continue;
-    end;
-    Sine:=Max(1E-6,Abs(T.X*U.Y-T.Y*U.X));
-    Cosine:=Abs(T.X*U.X+T.Y*U.Y);
-    Margin:=12;
-    Relation:=Document.FindCrossingRelation(C.ObjectAId,C.ObjectBId);
-    if Relation<>nil then Margin:=Relation.RangeMargin;
-    if C.Kind=mckTunnel then begin
-      HalfLength:=((UW*0.5+10)+(LW*0.5+1)*Cosine)/Sine+Margin;
-      Points:=MapCrossingPathSection(Lower,LowerDistance,HalfLength);
-      if Length(Points)<2 then Continue;
-      Builder:=TSkPathBuilder.Create; Builder.MoveTo(Points[0]);
-      for I:=1 to High(Points) do Builder.LineTo(Points[I]);
-      Stroke:=TSkPaint.Create(TSkPaintStyle.Stroke);
-      Stroke.StrokeWidth:=LW+4; Stroke.StrokeCap:=TSkStrokeCap.Butt;
-      Stroke.StrokeJoin:=TSkStrokeJoin.Round;
-      V.Cut:=Stroke.GetFillPath(Builder.Detach);
-      Marks:=TSkPathBuilder.Create;
-      for Side:=0 to 1 do begin
-        if Side=0 then begin P:=Points[0]; T:=Points[1]-P; end
-        else begin P:=Points[High(Points)]; T:=Points[High(Points)-1]-P; end;
-        Len:=Hypot(T.X,T.Y); if Len<1E-6 then Continue;
-        T:=T/Len; N:=PointF(-T.Y,T.X)*(LW*0.5+4);
-        Marks.MoveTo(P-N-T*2); Marks.QuadTo(P+T*6,P+N-T*2);
-      end;
-      V.Marks:=Marks.Detach; FVisuals:=FVisuals+[V]; Continue;
-    end;
-    // 斜交・太い下側経路でも、縁が橋区間の端からはみ出さない長さ。
-    HalfLength:=Max(12,((LW+2)*0.5+(UW*0.5+10)*Cosine)/Sine+Margin);
-    Points:=MapCrossingPathSection(Upper,Distance,HalfLength);
-    if Length(Points)<2 then Continue;
-    Builder:=TSkPathBuilder.Create; Builder.MoveTo(Points[0]);
-    for I:=1 to High(Points) do Builder.LineTo(Points[I]);
-    Stroke:=TSkPaint.Create(TSkPaintStyle.Stroke);
-    Stroke.StrokeWidth:=UW+20; Stroke.StrokeCap:=TSkStrokeCap.Butt;
-    Stroke.StrokeJoin:=TSkStrokeJoin.Round;
-    // 白塗りや全体消去ではなく、下側のレイヤーだけに差分クリップする。
-    // 橋本体、側線、端の開きと余白を含め、透明背景でも切れ目を残す。
-    V.Cut:=Stroke.GetFillPath(Builder.Detach);
-    Marks:=TSkPathBuilder.Create;
-    for Side:=-1 to 1 do begin
-      if Side=0 then Continue;
-      for I:=0 to High(Points) do begin
-        if I=High(Points) then T:=Points[I]-Points[I-1]
-        else T:=Points[I+1]-Points[I];
-        Len:=Hypot(T.X,T.Y); if Len<1E-6 then Continue;
-        N:=PointF(-T.Y/Len,T.X/Len); Offset:=Side*(UW*0.5+4);
-        P:=Points[I]+N*Offset;
-        if I=0 then begin
-          if C.Kind=mckUnderpass then Marks.MoveTo(P)
-          else begin Marks.MoveTo(P-T/Len*3+N*(Side*3)); Marks.LineTo(P); end;
-        end else Marks.LineTo(P);
-        if (I=High(Points)) and (C.Kind<>mckUnderpass) then
-          Marks.LineTo(P+T/Len*3+N*(Side*3));
-      end;
-    end;
-    V.Marks:=Marks.Detach;
-    FVisuals:=FVisuals+[V];
-  end;
-  // 残す領域は描画パスごとではなく、この文書描画の準備時に一度作る。
-  for I:=0 to High(FVisuals) do
-    FVisuals[I].Cut:=FCanvasPath.Op(FVisuals[I].Cut,TSkPathOp.Difference);
-end;
-
-procedure TMapCrossingRenderContext.ClipLower(const Canvas: ISkCanvas;
-  Layer: TVectArtLayer);
-var V: TMapCrossingVisual;
-begin
-  for V in FVisuals do
-    if V.LowerId=Layer.PersistentId then
-      // SVGCanvasはDifferenceクリップを反転せず出力するため、先に
-      // ベクターの差分を求め、残す領域を通常のIntersectで指定する。
-      Canvas.ClipPath(V.Cut,TSkClipOp.Intersect,True);
-end;
-
-procedure TMapCrossingRenderContext.DrawMarks(const Canvas: ISkCanvas;
-  Layer: TVectArtLayer; Opacity: Single);
-var V: TMapCrossingVisual; Paint: ISkPaint;
-begin
-  Paint:=TSkPaint.Create(TSkPaintStyle.Stroke);
-  Paint.Color:=FMarkColor; Paint.AlphaF:=Layer.Opacity*Opacity;
-  Paint.StrokeWidth:=2; Paint.StrokeCap:=TSkStrokeCap.Butt;
-  Paint.StrokeJoin:=TSkStrokeJoin.Round; Paint.AntiAlias:=True;
-  for V in FVisuals do
-    if (V.UpperId=Layer.PersistentId) and (V.Marks<>nil) then
-      Canvas.DrawPath(V.Marks,Paint);
-end;
 
 function BuildMapRakuImageFilter(
   Filter: TMapRakuFilter; ScaleX: Single = 1.0;
@@ -649,45 +450,6 @@ end;
 
 { TVectArtRenderBuffer }
 
-procedure TVectArtRenderBuffer.Clear;
-begin
-  if Length(FPixels) > 0 then
-    FillChar(FPixels[0], Length(FPixels) * SizeOf(TVectArtRgbaPixel), 0);
-end;
-
-function TVectArtRenderBuffer.GetData: PVectArtRgbaPixel;
-begin
-  if Length(FPixels) = 0 then
-    Result := nil
-  else
-    Result := @FPixels[0];
-end;
-
-function TVectArtRenderBuffer.GetPixelCount: NativeInt;
-begin
-  Result := Length(FPixels);
-end;
-
-function TVectArtRenderBuffer.GetStride: NativeInt;
-begin
-  Result := NativeInt(FWidth) * SizeOf(TVectArtRgbaPixel);
-end;
-
-procedure TVectArtRenderBuffer.SetSize(AWidth, AHeight: Integer);
-var
-  Count: Int64;
-begin
-  if (AWidth < 0) or (AHeight < 0) or
-    (AWidth > MAX_RENDER_DIMENSION) or (AHeight > MAX_RENDER_DIMENSION) then
-    raise EArgumentOutOfRangeException.Create('Invalid render dimensions');
-  Count := Int64(AWidth) * AHeight;
-  if Count > MaxInt then
-    raise EArgumentOutOfRangeException.Create('Render buffer is too large');
-  FWidth := AWidth;
-  FHeight := AHeight;
-  SetLength(FPixels, NativeInt(Count));
-end;
-
 procedure DrawMapRakuTextLine(const Canvas: ISkCanvas;
   const Text: string; const Font: ISkFont; const Paint: ISkPaint;
   X, BaselineY, LetterSpacing, FontSize: Single;
@@ -806,21 +568,6 @@ begin
   finally
     Scratch.Free;
   end;
-end;
-
-procedure MultiplyMapRakuBufferOpacity(Target: TVectArtRenderBuffer;
-  Opacity: Single);
-var
-  I: Integer;
-begin
-  if Target = nil then
-    Exit;
-  Opacity := EnsureRange(Opacity, 0.0, 1.0);
-  if Opacity >= 1.0 then
-    Exit;
-  for I := 0 to Target.PixelCount - 1 do
-    Target.Pixels[I].A := EnsureRange(
-      Round(Target.Pixels[I].A * Opacity), 0, 255);
 end;
 
 procedure RenderMapDocumentToCanvas(Document: TVectArtDocument;
@@ -1585,122 +1332,14 @@ end;
 
 procedure CompositeVectArtRgba(const Source: TVectArtRenderBuffer;
   Destination: PVectArtRgbaPixel; Width, Height: Integer);
-var
-  AlphaDenominator: Cardinal;
-  DestinationAlpha: Cardinal;
-  DestinationPixel: PVectArtRgbaPixel;
-  I: NativeInt;
-  PixelCount: NativeInt;
-  SourceAlpha: Cardinal;
-  SourcePixel: PVectArtRgbaPixel;
 begin
-  if (Source = nil) or (Destination = nil) or
-    (Source.Width <> Width) or (Source.Height <> Height) then
-    Exit;
-  PixelCount := NativeInt(Width) * Height;
-  SourcePixel := Source.Data;
-  DestinationPixel := Destination;
-  for I := 0 to PixelCount - 1 do
-  begin
-    SourceAlpha := SourcePixel^.A;
-    if SourceAlpha = 255 then
-      DestinationPixel^ := SourcePixel^
-    else if SourceAlpha <> 0 then
-    begin
-      DestinationAlpha := DestinationPixel^.A;
-      AlphaDenominator := SourceAlpha * 255 +
-        DestinationAlpha * (255 - SourceAlpha);
-      if AlphaDenominator <> 0 then
-      begin
-        DestinationPixel^.R :=
-          (Cardinal(SourcePixel^.R) * SourceAlpha * 255 +
-           Cardinal(DestinationPixel^.R) * DestinationAlpha *
-             (255 - SourceAlpha) + AlphaDenominator div 2) div
-          AlphaDenominator;
-        DestinationPixel^.G :=
-          (Cardinal(SourcePixel^.G) * SourceAlpha * 255 +
-           Cardinal(DestinationPixel^.G) * DestinationAlpha *
-             (255 - SourceAlpha) + AlphaDenominator div 2) div
-          AlphaDenominator;
-        DestinationPixel^.B :=
-          (Cardinal(SourcePixel^.B) * SourceAlpha * 255 +
-           Cardinal(DestinationPixel^.B) * DestinationAlpha *
-             (255 - SourceAlpha) + AlphaDenominator div 2) div
-          AlphaDenominator;
-        DestinationPixel^.A := (AlphaDenominator + 127) div 255;
-      end;
-    end;
-    Inc(SourcePixel);
-    Inc(DestinationPixel);
-  end;
+  MapRakuRenderBuffer.CompositeVectArtRgba(Source,Destination,Width,Height);
 end;
 
 procedure CompositeVectArtRgbaOffset(const Source: TVectArtRenderBuffer;
-  Destination: PVectArtRgbaPixel; Width, Height, OffsetX,
-  OffsetY: Integer);
-var
-  AlphaDenominator: Cardinal;
-  DestinationAlpha: Cardinal;
-  DestinationPixel: PVectArtRgbaPixel;
-  DestinationY: Integer;
-  EndX: Integer;
-  SourceAlpha: Cardinal;
-  SourcePixel: PVectArtRgbaPixel;
-  SourceX: Integer;
-  SourceY: Integer;
-  StartX: Integer;
+  Destination: PVectArtRgbaPixel; Width, Height, OffsetX, OffsetY: Integer);
 begin
-  if (Source = nil) or (Destination = nil) or
-    (Source.Width <> Width) or (Source.Height <> Height) then
-    Exit;
-  StartX := Max(0, -OffsetX);
-  EndX := Min(Width - 1, Width - 1 - OffsetX);
-  if StartX > EndX then
-    Exit;
-  for SourceY := 0 to Height - 1 do
-  begin
-    DestinationY := SourceY + OffsetY;
-    if (DestinationY < 0) or (DestinationY >= Height) then
-      Continue;
-    SourcePixel := Source.Data;
-    Inc(SourcePixel, NativeInt(SourceY) * Width + StartX);
-    DestinationPixel := Destination;
-    Inc(DestinationPixel, NativeInt(DestinationY) * Width +
-      StartX + OffsetX);
-    for SourceX := StartX to EndX do
-    begin
-      SourceAlpha := SourcePixel^.A;
-      if SourceAlpha = 255 then
-        DestinationPixel^ := SourcePixel^
-      else if SourceAlpha <> 0 then
-      begin
-        DestinationAlpha := DestinationPixel^.A;
-        AlphaDenominator := SourceAlpha * 255 +
-          DestinationAlpha * (255 - SourceAlpha);
-        if AlphaDenominator <> 0 then
-        begin
-          DestinationPixel^.R :=
-            (Cardinal(SourcePixel^.R) * SourceAlpha * 255 +
-             Cardinal(DestinationPixel^.R) * DestinationAlpha *
-               (255 - SourceAlpha) + AlphaDenominator div 2) div
-            AlphaDenominator;
-          DestinationPixel^.G :=
-            (Cardinal(SourcePixel^.G) * SourceAlpha * 255 +
-             Cardinal(DestinationPixel^.G) * DestinationAlpha *
-               (255 - SourceAlpha) + AlphaDenominator div 2) div
-            AlphaDenominator;
-          DestinationPixel^.B :=
-            (Cardinal(SourcePixel^.B) * SourceAlpha * 255 +
-             Cardinal(DestinationPixel^.B) * DestinationAlpha *
-               (255 - SourceAlpha) + AlphaDenominator div 2) div
-            AlphaDenominator;
-          DestinationPixel^.A := (AlphaDenominator + 127) div 255;
-        end;
-      end;
-      Inc(SourcePixel);
-      Inc(DestinationPixel);
-    end;
-  end;
+  MapRakuRenderBuffer.CompositeVectArtRgbaOffset(Source,Destination,Width,Height,OffsetX,OffsetY);
 end;
 
 procedure RenderMapLayersToCanvas(const Layers: TArray<TVectArtLayer>;

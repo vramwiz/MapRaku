@@ -43,7 +43,7 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base)'!=''">
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Vcl;Winapi;$(DCC_Namespace)</DCC_Namespace>
-        <DCC_UnitSearchPath>Lib\ColorPicker;Lib\DarkMenu;Lib\HorizontalTrackBar;Lib\InputMethod;Lib\Pipe;Lib\ShortcutAction;Lib\TextRenderer;Lib\VerticalScrollBar;Source\Automation;Source\Core\Commands;Source\Core\Commands\Layer;Source\Core\Commands\Layer\Group;Source\Core\Commands\Layer\Transform;Source\Core\Commands\Shape;Source\Core\Commands\Text;Source\Core\Geometry;Source\Core\Geometry\Shape;Source\Core\Geometry\Text;Source\Core\Model;Source\Core\Model\Pattern;Source\Editor;Source\Editor\Creation;Source\Editor\Interaction;Source\Editor\Interaction\Filter;Source\Editor\Interaction\Gradient;Source\Editor\Interaction\Group;Source\Editor\Interaction\Shape;Source\Editor\Interaction\Text;Source\Editor\Interaction\Texture;Source\Editor\Interaction\Transform;Source\Layers;Source\Layers\Clipboard;Source\Layers\List;Source\Layers\Operations;Source\Layout;Source\Map;Source\Map\Appearance;Source\Map\Export;Source\Map\Geometry;Source\Map\Symbols;Source\ObjectProperties;Source\ObjectProperties\Color;Source\ObjectProperties\Color\Pattern;Source\ObjectProperties\Color\Texture;Source\ObjectProperties\Filters;Source\ObjectProperties\Geometry;Source\Persistence;Source\Rendering;Source\Rendering\Cache;Source\Rendering\Overlay;Source\Rendering\Paint;Source\Rendering\Paint\Pattern;Source\Rendering\Paint\Stroke;Source\Shell;Source\Shell\Menus;Source\Shell\Toolbars;Source\ToolPalette;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>Lib\ColorPicker;Lib\DarkMenu;Lib\HorizontalTrackBar;Lib\InputMethod;Lib\Pipe;Lib\ShortcutAction;Lib\TextRenderer;Lib\VerticalScrollBar;Source\Automation;Source\Core\Commands;Source\Core\Commands\Path;Source\Core\Commands\Layer;Source\Core\Commands\Layer\Group;Source\Core\Commands\Layer\Transform;Source\Core\Commands\Shape;Source\Core\Commands\Text;Source\Core\Geometry;Source\Core\Geometry\Shape;Source\Core\Geometry\Text;Source\Core\Model;Source\Core\Model\Pattern;Source\Editor;Source\Editor\Creation;Source\Editor\Interaction;Source\Editor\Interaction\Filter;Source\Editor\Interaction\Gradient;Source\Editor\Interaction\Group;Source\Editor\Interaction\Shape;Source\Editor\Interaction\Text;Source\Editor\Interaction\Texture;Source\Editor\Interaction\Transform;Source\Layers;Source\Layers\Clipboard;Source\Layers\List;Source\Layers\Operations;Source\Layout;Source\Map\Commands;Source\Map\UI;Source\Map\Crossings;Source\Map\Editing;Source\Map\Rendering\Paths;Source\Map\Rendering\Crossings;Source\Map\Appearance;Source\Map\Export;Source\Map\Symbols;Source\ObjectProperties;Source\ObjectProperties\Color;Source\ObjectProperties\Color\Pattern;Source\ObjectProperties\Color\Texture;Source\ObjectProperties\Filters;Source\ObjectProperties\Geometry;Source\Persistence;Source\Rendering;Source\Rendering\Buffer;Source\Rendering\Cache;Source\Rendering\Overlay;Source\Rendering\Paint;Source\Rendering\Paint\Pattern;Source\Rendering\Paint\Stroke;Source\Shell;Source\Shell\Menus;Source\Shell\Toolbars;Source\ToolPalette;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_ExeOutput>.\$(Platform)\$(Config)</DCC_ExeOutput>
         <DCC_DcuOutput>.\$(Platform)\$(Config)</DCC_DcuOutput>
         <Manifest_File>$(BDS)\bin\default_app.manifest</Manifest_File>
@@ -81,22 +81,28 @@
         <UWP_DelphiLogo150>Image\Icon.png</UWP_DelphiLogo150>
     </PropertyGroup>
     <ItemGroup>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuStairRenderer.pas"/>
+        <DCCReference Include="Source\Rendering\Buffer\MapRakuRenderBuffer.pas"/>
+        <DCCReference Include="Source\Core\Commands\Path\MapRakuPathEditSession.pas"/>
+        <DCCReference Include="Source\Map\Crossings\MapRakuCrossingGeometry.pas"/>
+        <DCCReference Include="Source\Map\Crossings\MapRakuBridgeSpans.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Crossings\MapRakuCrossingRenderer.pas"/>
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
-        <DCCReference Include="Source\Map\Geometry\MapRakuPathEditor.pas"/>
+        <DCCReference Include="Source\Map\Editing\MapRakuPathEditor.pas"/>
         <DCCReference Include="Source\Map\Export\MapRakuFile.pas"/>
-        <DCCReference Include="Source\Map\Geometry\MapRakuPathSnap.pas"/>
+        <DCCReference Include="Source\Map\Editing\MapRakuPathSnap.pas"/>
         <DCCReference Include="Source\Map\Appearance\MapRakuTheme.pas"/>
         <DCCReference Include="Source\Map\Symbols\MapRakuSymbols.pas"/>
         <DCCReference Include="Source\Map\Export\MapRakuExport.pas"/>
-        <DCCReference Include="Source\Map\MapRakuMapCommands.pas"/>
-        <DCCReference Include="Source\Map\Geometry\MapRakuCrossings.pas"/>
-        <DCCReference Include="Source\Map\MapRakuMapPanel.pas"/>
-        <DCCReference Include="Source\Map\MapRakuPathRenderer.pas"/>
-        <DCCReference Include="Source\Map\MapRakuRailRenderer.pas"/>
-        <DCCReference Include="Source\Map\MapRakuRiverRenderer.pas"/>
-        <DCCReference Include="Source\Map\MapRakuRoadRenderer.pas"/>
+        <DCCReference Include="Source\Map\Commands\MapRakuMapCommands.pas"/>
+        <DCCReference Include="Source\Map\Crossings\MapRakuCrossings.pas"/>
+        <DCCReference Include="Source\Map\UI\MapRakuMapPanel.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuPathRenderer.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuRailRenderer.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuRiverRenderer.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuRoadRenderer.pas"/>
         <DCCReference Include="Lib\TextRenderer\TextRendererSkiaBootstrap.pas"/>
         <DCCReference Include="Lib\TextRenderer\TextRendererTypes.pas"/>
         <DCCReference Include="Lib\TextRenderer\TextRenderer.pas"/>

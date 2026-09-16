@@ -1,7 +1,8 @@
 ﻿// 同層グループ内の地図経路を直接点編集する。入力・補助表示・1操作分の履歴だけを担当する。
 unit MapRakuPathEditor;
 interface
-uses System.Classes, System.Types, Vcl.Controls, Vcl.Graphics, MapRakuDocument, MapRakuEditorState, MapRakuEditHistory;
+uses System.Classes, System.Types, Vcl.Controls, Vcl.Graphics, MapRakuDocument,
+  MapRakuEditorState, MapRakuEditHistory, MapRakuEditCommands, MapRakuPathEditSession;
 type
   TMapPathEditor = class
   private
@@ -9,7 +10,7 @@ type
     FHistory: TVectArtEditHistory;
     FLayer: TVectArtPathLayer;
     FCandidates:TArray<TVectArtPathLayer>;
-    FBefore: TArray<TMapRakuVertex>;
+    FEditSession: TMapRakuPathEditSession;
     FBounds: TRect;
     FZoom: Single;
     FVertex, FHandle: Integer;
@@ -19,8 +20,10 @@ type
     function ScreenPoint(const P: TPointF): TPoint;
     function LogicalPoint(X,Y: Integer): TPointF;
     procedure Commit;
+    procedure BeginEdit;
     function PickLayer(X,Y:Integer):TVectArtPathLayer;
   public
+    destructor Destroy; override;
     procedure Configure(Document: TVectArtDocument; State: TVectArtEditorState;
       History: TVectArtEditHistory; const Bounds: TRect; Zoom: Single);
     function MouseDown(Button: TMouseButton; Shift: TShiftState; X,Y: Integer): Boolean;
@@ -30,31 +33,23 @@ type
     procedure Draw(Canvas: TCustomCanvas);
   end;
 implementation
-uses Vcl.Direct2D, System.Math, MapRakuEditCommands, MapRakuPathOperations, MapRakuPathSnap;
-type
-  TMapVertexCommand = class(TVectArtEditCommand)
-  private
-    FDoc: TVectArtDocument; FPath: TVectArtPathLayer;
-    FOld, FNew: TArray<TMapRakuVertex>;
-  public
-    constructor Create(Doc: TVectArtDocument; Path: TVectArtPathLayer;
-      const Before, After: TArray<TMapRakuVertex>);
-    procedure Execute; override;
-    procedure Undo; override;
-  end;
-constructor TMapVertexCommand.Create(Doc: TVectArtDocument; Path: TVectArtPathLayer;
-  const Before, After: TArray<TMapRakuVertex>);
-begin inherited Create; FDoc:=Doc; FPath:=Path; FOld:=Copy(Before); FNew:=Copy(After); end;
-procedure TMapVertexCommand.Execute;
-begin FPath.Vertices:=FNew; FDoc.Changed; end;
-procedure TMapVertexCommand.Undo;
-begin FPath.Vertices:=FOld; FDoc.Changed; end;
+uses Vcl.Direct2D, System.Math, System.SysUtils, MapRakuPathOperations, MapRakuPathSnap;
+destructor TMapPathEditor.Destroy;
+begin FEditSession.Free; inherited; end;
+
+procedure TMapPathEditor.BeginEdit;
+begin
+  FreeAndNil(FEditSession);
+  FEditSession:=TMapRakuPathEditSession.Create(FDocument);
+  FEditSession.Track(FLayer);
+end;
 procedure TMapPathEditor.Configure(Document: TVectArtDocument; State: TVectArtEditorState;
   History: TVectArtEditHistory; const Bounds: TRect; Zoom: Single);
 var L: TVectArtLayer; I:Integer; OldLayer:TVectArtPathLayer;
   procedure AddPaths(Item:TVectArtLayer);
   var J:Integer; Group:TMapRakuGroupLayer;
   begin
+    if not Item.Visible or Item.Locked then Exit;
     if (Item is TVectArtPathLayer) and (TVectArtPathLayer(Item).MapElement<>'') and
       not Item.Locked and Item.Transform.IsIdentity then
       FCandidates:=FCandidates+[TVectArtPathLayer(Item)]
@@ -106,10 +101,15 @@ begin Result:=Point(Round(FBounds.CenterPoint.X+P.X*FZoom),Round(FBounds.CenterP
 function TMapPathEditor.LogicalPoint(X,Y:Integer):TPointF;
 begin Result:=PointF((X-FBounds.CenterPoint.X)/FZoom,(Y-FBounds.CenterPoint.Y)/FZoom); end;
 procedure TMapPathEditor.Commit;
+var Command: TVectArtEditCommand;
 begin
-  if (FLayer<>nil) and not MapRakuPathVerticesEqual(FBefore,FLayer.Vertices) then begin
-    if FHistory<>nil then FHistory.AddApplied(TMapVertexCommand.Create(FDocument,FLayer,FBefore,FLayer.Vertices));
-    FDocument.Changed;
+  if FEditSession<>nil then begin
+    Command:=FEditSession.CaptureCommand;
+    if Command<>nil then begin
+      if FHistory<>nil then FHistory.AddApplied(Command) else Command.Free;
+      FDocument.Changed;
+    end;
+    FreeAndNil(FEditSession);
   end;
 end;
 function TMapPathEditor.MouseDown(Button:TMouseButton; Shift:TShiftState; X,Y:Integer):Boolean;
@@ -123,13 +123,16 @@ begin
     if L<>FLayer then FVertex:=-1;
     FLayer:=L;
   end;
-  V:=FLayer.Vertices; FBefore:=Copy(V); FHandle:=0;
+  V:=FLayer.Vertices; BeginEdit; FHandle:=0;
   if (FVertex>=0) and (FVertex<Length(V)) and (Button=mbLeft) then
     for I:=1 to 2 do begin
       if I=1 then A:=V[FVertex].Position+V[FVertex].IncomingControl
       else A:=V[FVertex].Position+V[FVertex].OutgoingControl;
       P:=ScreenPoint(A);
-      if (V[FVertex].Kind=slvkBezier) and (Hypot(X-P.X,Y-P.Y)<7) then begin
+      if (V[FVertex].Kind=slvkBezier) and
+        (Hypot(A.X-V[FVertex].Position.X,A.Y-V[FVertex].Position.Y)>1E-6) and
+        (((I=1) and (FVertex>0)) or ((I=2) and (FVertex<High(V)))) and
+        (Hypot(X-P.X,Y-P.Y)<7) then begin
         FHandle:=I; FDragging:=True; Exit(True);
       end;
     end;
@@ -164,6 +167,7 @@ end;
 function TMapPathEditor.MouseMove(Shift:TShiftState; X,Y:Integer):Boolean;
 var V:TArray<TMapRakuVertex>; P,T,Snapped:TPointF; Path,NewHoverLayer:TVectArtPathLayer;
   I,NewHoverVertex:Integer; Q:TPoint; D,Best:Single;
+  Endpoint: TMapRakuEndpointSnap;
 begin
   if not FDragging then begin
     NewHoverLayer:=nil; NewHoverVertex:=-1; Best:=14;
@@ -177,13 +181,22 @@ begin
     FHoverLayer:=NewHoverLayer; FHoverVertex:=NewHoverVertex; Exit;
   end;
   Result:=FLayer<>nil; if not Result then Exit;
+  if FEditSession<>nil then FEditSession.Restore;
   V:=FLayer.Vertices; if (FVertex<0) or (FVertex>=Length(V)) then Exit(False);
   P:=LogicalPoint(X,Y);
   if FHandle=1 then V[FVertex].IncomingControl:=P-V[FVertex].Position
   else if FHandle=2 then V[FVertex].OutgoingControl:=P-V[FVertex].Position
   else begin
-    if not (ssAlt in Shift) then
-      if NearestMapPath(FDocument,P,6/FZoom,True,'',Snapped,T,Path,FLayer) then P:=Snapped;
+    if not (ssAlt in Shift) then begin
+      if FLayer.IsEndpoint(FVertex) and
+        NearestMapEndpoint(FDocument,P,MAP_PATH_ENDPOINT_SNAP_PIXELS/FZoom,
+          False,FLayer.ConnectionFamily,Endpoint,FLayer) then begin
+        if Endpoint.CanAdjust then FEditSession.Track(Endpoint.Path);
+        FLayer.ConnectEndpoint(FVertex,Endpoint.Path,Endpoint.Index,Endpoint.CanAdjust);
+        FDocument.Changed; Exit(True);
+      end;
+      if NearestMapPath(FDocument,P,6/FZoom,False,FLayer.MapElement,Snapped,T,Path,FLayer) then P:=Snapped;
+    end;
     V[FVertex].Position:=P;
   end;
   FLayer.Vertices:=V; FDocument.Changed;
@@ -195,7 +208,7 @@ var V:TArray<TMapRakuVertex>; K:TMapRakuVertexKind;
 begin
   Result:=(FLayer<>nil) and (FVertex>=0) and (Key=Ord('P'));
   if not Result then Exit;
-  V:=FLayer.Vertices; FBefore:=Copy(V);
+  V:=FLayer.Vertices; BeginEdit;
   if V[FVertex].Kind=slvkSharp then K:=slvkBezier else K:=slvkSharp;
   SetMapRakuPathVertexKind(V,FVertex,K); FLayer.Vertices:=V; Commit;
 end;

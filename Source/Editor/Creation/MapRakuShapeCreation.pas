@@ -32,6 +32,8 @@ type
     FStartPoint: TPoint;
     FSnapGuides: TArray<TMapRakuSnapGuide>;
     FZoom: Single;
+    FStartConnect, FEndConnect, FInputEndpointSnapped: Boolean;
+    procedure AlignMapPreview(var Vertices: TArray<TMapRakuVertex>);
     function AdjustInputPoint(const PointValue: TPoint;
       Shift: TShiftState; ConstrainToPrevious: Boolean): TPoint;
     // 始点の近傍では両軸を同じ頂点へ吸着し、閉じ位置を示すガイドを更新する。
@@ -101,7 +103,7 @@ implementation
 uses
   System.Math, Vcl.Graphics,
   MapRakuMapCommands, MapRakuGeometry, MapRakuLayerStructureCommands,
-  MapRakuLayerNaming, MapRakuPathOperations,
+  MapRakuLayerNaming, MapRakuPathOperations, MapRakuPathSnap,
   MapRakuShapeOperations, MapRakuTextCommands;
 
 const
@@ -157,6 +159,7 @@ begin
   FPressureCaptured := False;
   SetLength(FVertexKinds, 0);
   FNextVertexKind := slvkSharp;
+  FStartConnect:=False; FEndConnect:=False; FInputEndpointSnapped:=False;
 end;
 
 function PointAtScreenAngle(const Anchor, PointValue: TPoint;
@@ -218,11 +221,29 @@ var
   ProposedAngle: Single;
   SnappedAngle: Single;
   SnappedPoint: TPointF;
+  Endpoint: TMapRakuEndpointSnap;
 begin
   Result := ClampToCanvas(PointValue);
+  FInputEndpointSnapped:=False;
   // 始点への点吸着を、角度・グリッド・他オブジェクトの軸吸着より優先する。
   if ConstrainToPrevious and SnapToPathStart(Result, Shift) then
     Exit;
+  if (FEditorState.MapElement<>'') and not (ssAlt in Shift) then begin
+    LogicalPoint:=PointF(ScreenToLogicalX(Result.X,FCanvasBounds,FZoom,FDocument.CanvasLayer.Width),
+      ScreenToLogicalY(Result.Y,FCanvasBounds,FZoom,FDocument.CanvasLayer.Height));
+    if NearestMapEndpoint(FDocument,LogicalPoint,MAP_PATH_ENDPOINT_SNAP_PIXELS/FZoom,False,
+      FEditorState.MapElement,Endpoint) then begin
+      FInputEndpointSnapped:=True;
+      Result:=Point(LogicalToScreenX(Endpoint.Point.X,FCanvasBounds,FZoom,FDocument.CanvasLayer.Width),
+        LogicalToScreenY(Endpoint.Point.Y,FCanvasBounds,FZoom,FDocument.CanvasLayer.Height));
+      Guide:=Default(TMapRakuSnapGuide); Guide.Axis:=slsaX;
+      Guide.StartPoint:=Endpoint.Point-PointF(0,8/FZoom);
+      Guide.EndPoint:=Endpoint.Point+PointF(0,8/FZoom); FSnapGuides:=[Guide];
+      Guide.Axis:=slsaY; Guide.StartPoint:=Endpoint.Point-PointF(8/FZoom,0);
+      Guide.EndPoint:=Endpoint.Point+PointF(8/FZoom,0); FSnapGuides:=FSnapGuides+[Guide];
+      Exit;
+    end;
+  end;
   AngleSnapped := False;
   ConstrainHorizontal := False;
   if ConstrainToPrevious then
@@ -277,7 +298,7 @@ begin
         ScreenToLogicalY(FPathPoints[I].Y, FCanvasBounds, FZoom,
           FDocument.CanvasLayer.Height))];
     if SnapMapRakuPointWithCandidates(FDocument, LogicalPoint,
-      FZoom, False, CandidatePoints, SnappedPoint, FSnapGuides) then
+      FZoom, False, CandidatePoints, SnappedPoint, FSnapGuides,FEditorState.MapElement) then
     begin
       Result := Point(
         LogicalToScreenX(SnappedPoint.X, FCanvasBounds, FZoom,
@@ -430,7 +451,7 @@ begin
   if Data.MapElement <> '' then
   begin
     Data.Name := Data.MapElement;
-    InsertMapPath(FDocument, FEditHistory, Data);
+    InsertMapPath(FDocument, FEditHistory, Data,FStartConnect,FEndConnect,0.75/FZoom);
     FEditorState.CurrentTool := vetSelect;
     Exit;
   end;
@@ -489,7 +510,7 @@ begin
   if Data.MapElement <> '' then
   begin
     Data.Name := Data.MapElement;
-    InsertMapPath(FDocument, FEditHistory, Data);
+    InsertMapPath(FDocument, FEditHistory, Data,FStartConnect,FEndConnect,0.75/FZoom);
     Exit;
   end;
   BeforeSelection := FDocument.GetSelectedLayerIndices;
@@ -952,6 +973,7 @@ begin
     Exit;
   if FEditorState.CurrentTool = vetFreehand then
   begin
+    FStartConnect:=False; FEndConnect:=False; FInputEndpointSnapped:=False;
     PointValue := ClampToCanvas(Point(X, Y));
     FActive := True;
     FCreationTool := vetFreehand;
@@ -967,7 +989,10 @@ begin
     FActive and (FEditorState.CurrentTool in [vetPath, vetShape,
       vetTextPath]));
   if not FActive then
+  begin
+    FStartConnect:=FInputEndpointSnapped;
     FDocument.SetSelectedLayers([]);
+  end;
   if FEditorState.CurrentTool in [vetPath, vetShape, vetTextPath] then
   begin
     if (ssDouble in Shift) and
@@ -979,6 +1004,7 @@ begin
       FinishPath(FEditorState.CurrentTool = vetShape);
       Exit;
     end;
+    FEndConnect:=FInputEndpointSnapped;
     if not FActive then
     begin
       FActive := True;
@@ -1085,6 +1111,7 @@ begin
   FCurrentPoint := AdjustInputPoint(Point(X, Y), Shift,
     FEditorState.CurrentTool = vetLine);
   FModifiers := Shift;
+  FEndConnect:=FInputEndpointSnapped;
   if FEditorState.CurrentTool = vetLine then
     CreateLine
   else if FEditorState.CurrentTool = vetArc then
@@ -1246,6 +1273,38 @@ begin
   Result := BuildOpenPathPreview(Points);
 end;
 
+procedure TVectArtShapeCreation.AlignMapPreview(var Vertices: TArray<TMapRakuVertex>);
+var Preview: TVectArtPathLayer; I,Endpoint: Integer; P,T: TPointF;
+  Snap: TMapRakuEndpointSnap;
+begin
+  if (FEditorState.MapElement='') or (Length(Vertices)<2) then Exit;
+  for I:=0 to High(Vertices) do begin
+    Vertices[I].Position:=PointF(
+      (Vertices[I].Position.X-FCanvasBounds.CenterPoint.X)/FZoom,
+      (Vertices[I].Position.Y-FCanvasBounds.CenterPoint.Y)/FZoom);
+    Vertices[I].IncomingControl:=Vertices[I].IncomingControl/FZoom;
+    Vertices[I].OutgoingControl:=Vertices[I].OutgoingControl/FZoom;
+  end;
+  Preview:=TVectArtPathLayer.Create('',Vertices,False);
+  try
+    Preview.MapElement:=FEditorState.MapElement;
+    for I:=0 to 1 do begin
+      if ((I=0) and not FStartConnect) or ((I=1) and not FInputEndpointSnapped) then Continue;
+      if I=0 then Endpoint:=0 else Endpoint:=High(Vertices);
+      if Preview.TryEndpoint(Endpoint,P,T) and
+        NearestMapEndpoint(FDocument,P,0.75/FZoom,False,Preview.MapElement,Snap) then
+        Preview.ConnectEndpoint(Endpoint,Snap.Path,Snap.Index,False);
+    end;
+    Vertices:=Preview.Vertices;
+  finally Preview.Free; end;
+  for I:=0 to High(Vertices) do begin
+    Vertices[I].Position:=PointF(FCanvasBounds.CenterPoint.X,FCanvasBounds.CenterPoint.Y)+
+      Vertices[I].Position*FZoom;
+    Vertices[I].IncomingControl:=Vertices[I].IncomingControl*FZoom;
+    Vertices[I].OutgoingControl:=Vertices[I].OutgoingControl*FZoom;
+  end;
+end;
+
 function TVectArtShapeCreation.BuildOpenPathPreview(
   out Points: TArray<TPoint>): Boolean;
 var
@@ -1280,6 +1339,7 @@ begin
     FCurrentPoint.Y);
   Vertices[High(Vertices)].Kind := FNextVertexKind;
   ConfigureMapRakuOpenPath(Vertices);
+  AlignMapPreview(Vertices);
   SetLength(Points, 1 + High(Vertices) * SHAPE_PREVIEW_CURVE_STEPS);
   OutputIndex := 0;
   Points[OutputIndex] := Point(Round(Vertices[0].Position.X),

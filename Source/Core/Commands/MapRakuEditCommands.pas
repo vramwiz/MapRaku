@@ -189,7 +189,7 @@ type
 implementation
 
 uses
-  System.Math;
+  System.Math, MapRakuPathOperations;
 
 procedure TVectArtCompoundCommand.Add(Command: TVectArtEditCommand);
 begin

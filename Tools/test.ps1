@@ -4,7 +4,7 @@ Set-Location $root
 $enc = [Text.UTF8Encoding]::new($true)
 $source = [IO.File]::ReadAllText((Join-Path $root 'MapRaku.dpr'))
 $units = $source.Substring($source.IndexOf('uses'),$source.IndexOf('{$R')-$source.IndexOf('uses'))
-$units = $units.Replace('  Vcl.Forms,',"  System.SysUtils,`r`n  MapRakuTestCases in 'Tests\MapRakuTestCases.pas',`r`n  Vcl.Forms,")
+$units = $units.Replace('  Vcl.Forms,',"  System.SysUtils,`r`n  MapRakuTestCases in 'Tests\MapRakuTestCases.pas',`r`n  MapRakuTestSupport in 'Tests\Support\MapRakuTestSupport.pas',`r`n  MapRakuConnectionTests in 'Tests\Map\MapRakuConnectionTests.pas',`r`n  MapRakuCrossingTests in 'Tests\Map\MapRakuCrossingTests.pas',`r`n  Vcl.Forms,")
 $main = @'
 begin
   try

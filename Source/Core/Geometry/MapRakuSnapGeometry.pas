@@ -27,7 +27,7 @@ function SnapMapRakuPoint(Document: TVectArtDocument;
 function SnapMapRakuPointWithCandidates(Document: TVectArtDocument;
   const PointValue: TPointF; Zoom: Single; ExcludeSelected: Boolean;
   const CandidatePoints: TArray<TPointF>; out SnappedPoint: TPointF;
-  out Guides: TArray<TMapRakuSnapGuide>): Boolean;
+  out Guides: TArray<TMapRakuSnapGuide>; const PathKind: string = ''): Boolean;
 
 // 移動前の外接範囲を基準に、移動量を各辺と中心の候補へ吸着する。
 function SnapMapRakuMove(Document: TVectArtDocument;
@@ -287,7 +287,7 @@ function SnapMapRakuPointCore(Document: TVectArtDocument;
   const PointValue: TPointF; Zoom: Single; ExcludeSelected: Boolean;
   const CandidatePoints: TArray<TPointF>;
   out SnappedPoint: TPointF;
-  out Guides: TArray<TMapRakuSnapGuide>): Boolean;
+  out Guides: TArray<TMapRakuSnapGuide>; const PathKind: string = ''): Boolean;
 var
   BestX: TMapRakuBestSnap;
   BestY: TMapRakuBestSnap;
@@ -304,7 +304,7 @@ begin
   if (Document = nil) or (Zoom <= 0) then
     Exit(False);
   Tolerance := SNAP_DISTANCE_PIXELS / Zoom;
-  if NearestMapPath(Document, PointValue, Tolerance, ExcludeSelected, '', SnappedPoint, Tangent, Path) then
+  if NearestMapPath(Document, PointValue, Tolerance, ExcludeSelected, PathKind, SnappedPoint, Tangent, Path) then
   begin
     Guide := Default(TMapRakuSnapGuide);
     Guide.Axis := slsaAngle; Guide.StartPoint := PointValue; Guide.EndPoint := SnappedPoint;
@@ -342,10 +342,10 @@ end;
 function SnapMapRakuPointWithCandidates(Document: TVectArtDocument;
   const PointValue: TPointF; Zoom: Single; ExcludeSelected: Boolean;
   const CandidatePoints: TArray<TPointF>; out SnappedPoint: TPointF;
-  out Guides: TArray<TMapRakuSnapGuide>): Boolean;
+  out Guides: TArray<TMapRakuSnapGuide>; const PathKind: string): Boolean;
 begin
   Result := SnapMapRakuPointCore(Document, PointValue, Zoom,
-    ExcludeSelected, CandidatePoints, SnappedPoint, Guides);
+    ExcludeSelected, CandidatePoints, SnappedPoint, Guides, PathKind);
 end;
 
 function SnapMapRakuMoveCore(Document: TVectArtDocument;

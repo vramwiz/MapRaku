@@ -3,7 +3,8 @@ unit MapRakuMapCommands;
 interface
 uses MapRakuDocument, MapRakuEditHistory, MapRakuEditorState;
 procedure InsertMapPath(Document: TVectArtDocument; History: TVectArtEditHistory;
-  const Data: TVectArtPathData);
+  const Data: TVectArtPathData; ConnectStart: Boolean = False;
+  ConnectEnd: Boolean = False; EndpointTolerance: Single = 0);
 procedure InsertMapLevelBoundary(Document:TVectArtDocument; History:TVectArtEditHistory);
 procedure SetMapCrossingRelation(Document:TVectArtDocument;
   History:TVectArtEditHistory; const ObjectAId,ObjectBId:string;
@@ -16,7 +17,7 @@ procedure DetachMapChild(Document: TVectArtDocument; History: TVectArtEditHistor
 function IsMapTree(Layer: TVectArtLayer): Boolean;
 implementation
 uses System.SysUtils, System.Math, System.Types, Vcl.Graphics,
-  MapRakuEditCommands;
+  MapRakuEditCommands, MapRakuPathEditSession, MapRakuPathSnap;
 type
   TInsertMap = class(TVectArtEditCommand)
   private
@@ -144,12 +145,48 @@ begin
   FDocument.ExtractLayer(FIndex); FApplied := False;
 end;
 procedure InsertMapPath(Document: TVectArtDocument; History: TVectArtEditHistory;
-  const Data: TVectArtPathData);
-var C: TVectArtEditCommand;
+  const Data: TVectArtPathData; ConnectStart, ConnectEnd: Boolean;
+  EndpointTolerance: Single);
+var C: TInsertMap; Changes: TMapRakuPathEditSession;
+  Combined: TVectArtCompoundCommand; Path: TVectArtPathLayer;
+  Snap: TMapRakuEndpointSnap; P,T: TPointF; I, Endpoint: Integer;
+  Connections: array[0..1] of TMapRakuEndpointSnap;
 begin
   C:=TInsertMap.Create(Document,Data);
   C.Execute;
-  if History <> nil then History.AddApplied(C) else C.Free;
+  if not (ConnectStart or ConnectEnd) or not (C.FLayer is TVectArtPathLayer) then begin
+    if History<>nil then History.AddApplied(C) else C.Free;
+    Exit;
+  end;
+  Combined:=TVectArtCompoundCommand.Create; Combined.Add(C);
+  Changes:=TMapRakuPathEditSession.Create(Document);
+  try
+    if C.FLayer is TVectArtPathLayer then begin
+      Path:=TVectArtPathLayer(C.FLayer); Changes.Track(Path);
+      Connections[0]:=Default(TMapRakuEndpointSnap);
+      Connections[1]:=Default(TMapRakuEndpointSnap);
+      for I:=0 to 1 do begin
+        if ((I=0) and not ConnectStart) or ((I=1) and not ConnectEnd) then Continue;
+        if I=0 then Endpoint:=0 else Endpoint:=High(Path.Vertices);
+        if Path.TryEndpoint(Endpoint,P,T) and
+          NearestMapEndpoint(Document,P,EndpointTolerance,False,Path.MapElement,Snap,Path) then begin
+          if Snap.CanAdjust then Changes.Track(Snap.Path);
+          if Path.ConnectEndpoint(Endpoint,Snap.Path,Snap.Index,False,False) then
+            Connections[I]:=Snap;
+        end;
+      end;
+      // 両端の位置を確定してから接線をそろえる。後の端点吸着で直線の
+      // 角度が変わり、先に調整した相手の曲線がずれることを防ぐ。
+      for I:=0 to 1 do if Connections[I].Path<>nil then begin
+        if I=0 then Endpoint:=0 else Endpoint:=High(Path.Vertices);
+        Snap:=Connections[I];
+        Path.ConnectEndpoint(Endpoint,Snap.Path,Snap.Index,Snap.CanAdjust);
+      end;
+    end;
+    Combined.Add(Changes.CaptureCommand);
+    Document.Changed;
+    if History<>nil then History.AddApplied(Combined) else Combined.Free;
+  finally Changes.Free; end;
 end;
 
 procedure InsertMapLevelBoundary(Document:TVectArtDocument; History:TVectArtEditHistory);

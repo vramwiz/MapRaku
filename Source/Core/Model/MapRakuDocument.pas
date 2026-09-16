@@ -521,6 +521,21 @@ type
     procedure AssignEditablePathVertices(
       const Value: TArray<TMapRakuVertex>); override;
     function SupportsPathEditing: Boolean; override;
+    // 接続系列と端点幾何は全ての経路で共有する。種類別UIには実装しない。
+    class function ConnectionFamilyOf(const Element: string): string; static;
+    function ConnectionFamily: string; virtual;
+    function CanConnectTo(Target: TVectArtPathLayer): Boolean;
+    function IsEndpoint(Index: Integer): Boolean;
+    function IsCurvedEndpoint(Index: Integer): Boolean;
+    // 変換後座標と経路の外向き単位接線を返す。閉経路や退化した端点は対象外。
+    function TryEndpoint(Index: Integer; out Position, Outward: TPointF): Boolean;
+    // 制御点の長さを維持して接線だけを合わせ、接続付近以外の形状変化を抑える。
+    function AlignEndpointTangent(Index: Integer; const Outward: TPointF): Boolean;
+    // 直線の向きを保ち曲線側を調整する。ロック相手はAdjustTarget=Falseで保護する。
+    // 履歴・通知は呼び出し元でまとめる。永続的な接続拘束は作らない。
+    function ConnectEndpoint(Index: Integer; Target: TVectArtPathLayer;
+      TargetIndex: Integer; AdjustTarget: Boolean = True;
+      AlignTangents: Boolean = True): Boolean;
     property MapElement: string read FMapElement write FMapElement; // 空文字は通常の線。road / jr / rail / river。
     property MapStepCount: Integer read FMapStepCount write FMapStepCount;
     property Closed: Boolean read FClosed write FClosed;
@@ -1389,6 +1404,111 @@ begin
   FStrokeColor := clBlack;
   FMifStrokeStyle := vssSolid;
   FStrokeWidth := 1.0;
+end;
+
+class function TVectArtPathLayer.ConnectionFamilyOf(const Element: string): string;
+begin
+  Result:=LowerCase(Element);
+  if (Result='jr') or (Result='rail') then Result:='railway';
+end;
+
+function TVectArtPathLayer.ConnectionFamily: string;
+begin Result:=ConnectionFamilyOf(MapElement); end;
+
+function TVectArtPathLayer.CanConnectTo(Target: TVectArtPathLayer): Boolean;
+begin
+  Result:=(Target<>nil) and (Target<>Self) and (ConnectionFamily<>'') and
+    (ConnectionFamily=Target.ConnectionFamily) and not Closed and not Target.Closed;
+end;
+
+function TVectArtPathLayer.IsEndpoint(Index: Integer): Boolean;
+begin
+  Result:=not Closed and (Length(FVertices)>=2) and
+    ((Index=0) or (Index=High(FVertices)));
+end;
+
+function TVectArtPathLayer.IsCurvedEndpoint(Index: Integer): Boolean;
+begin
+  Result:=IsEndpoint(Index);
+  if not Result then Exit;
+  if Index=0 then Result:=FVertices[0].OutgoingSegment=slskCubicBezier
+  else Result:=FVertices[Index-1].OutgoingSegment=slskCubicBezier;
+end;
+
+function TVectArtPathLayer.TryEndpoint(Index: Integer;
+  out Position, Outward: TPointF): Boolean;
+var Adjacent: Integer; Handle, LocalPoint: TPointF; Len: Single;
+begin
+  Result:=False; Position:=PointF(0,0); Outward:=PointF(0,0);
+  if not IsEndpoint(Index) then Exit;
+  if Index=0 then Adjacent:=1 else Adjacent:=Index-1;
+  LocalPoint:=FVertices[Index].Position;
+  Position:=Transform.Map(LocalPoint);
+  Handle:=PointF(0,0);
+  if IsCurvedEndpoint(Index) then begin
+    if Index=0 then Handle:=FVertices[Index].OutgoingControl
+    else Handle:=FVertices[Index].IncomingControl;
+    // ゼロ長ハンドルでは次の制御点、さらに隣の頂点へフォールバックする。
+    if Hypot(Handle.X,Handle.Y)<1E-6 then
+      if Index=0 then Handle:=FVertices[Adjacent].Position+
+        FVertices[Adjacent].IncomingControl-LocalPoint
+      else Handle:=FVertices[Adjacent].Position+
+        FVertices[Adjacent].OutgoingControl-LocalPoint;
+  end;
+  if Hypot(Handle.X,Handle.Y)<1E-6 then Handle:=FVertices[Adjacent].Position-LocalPoint;
+  Outward:=Position-Transform.Map(LocalPoint+Handle);
+  Len:=Hypot(Outward.X,Outward.Y);
+  if Len<1E-6 then Exit;
+  Outward:=Outward/Len; Result:=True;
+end;
+
+function TVectArtPathLayer.AlignEndpointTangent(Index: Integer;
+  const Outward: TPointF): Boolean;
+var P, Handle, Direction: TPointF; InverseTransform: TMapRakuTransform;
+  Len: Single; Adjacent: Integer;
+begin
+  Result:=False;
+  if Locked or not IsCurvedEndpoint(Index) or
+    not Transform.Inverse(InverseTransform) then Exit;
+  Len:=Hypot(Outward.X,Outward.Y); if Len<1E-6 then Exit;
+  P:=FVertices[Index].Position;
+  // 世界座標の接線をローカルへ戻し、元のハンドル長を保って方向だけ変える。
+  Direction:=InverseTransform.Map(Transform.Map(P)-Outward/Len)-P;
+  Len:=Hypot(Direction.X,Direction.Y); if Len<1E-6 then Exit;
+  Direction:=Direction/Len;
+  if Index=0 then begin Handle:=FVertices[Index].OutgoingControl; Adjacent:=1; end
+  else begin Handle:=FVertices[Index].IncomingControl; Adjacent:=Index-1; end;
+  Len:=Hypot(Handle.X,Handle.Y);
+  if Len<1E-6 then Len:=Hypot(FVertices[Adjacent].Position.X-P.X,
+    FVertices[Adjacent].Position.Y-P.Y)/3;
+  if Len<1E-6 then Exit;
+  FVertices[Index].Kind:=slvkBezier;
+  if Index=0 then FVertices[Index].OutgoingControl:=Direction*Len
+  else FVertices[Index].IncomingControl:=Direction*Len;
+  Result:=True;
+end;
+
+function TVectArtPathLayer.ConnectEndpoint(Index: Integer;
+  Target: TVectArtPathLayer; TargetIndex: Integer;
+  AdjustTarget, AlignTangents: Boolean): Boolean;
+var Position, Outward, OwnPosition, OwnOutward: TPointF;
+  InverseTransform: TMapRakuTransform;
+  Adjacent: Integer;
+begin
+  Result:=False;
+  if Locked or not CanConnectTo(Target) or not IsEndpoint(Index) or
+    not Target.TryEndpoint(TargetIndex,Position,Outward) or
+    not Transform.Inverse(InverseTransform) then Exit;
+  if Index=0 then Adjacent:=1 else Adjacent:=Index-1;
+  OwnPosition:=Transform.Map(FVertices[Adjacent].Position);
+  if Hypot(Position.X-OwnPosition.X,Position.Y-OwnPosition.Y)<1E-6 then Exit;
+  FVertices[Index].Position:=InverseTransform.Map(Position);
+  if not AlignTangents then Exit(True);
+  if IsCurvedEndpoint(Index) then AlignEndpointTangent(Index,Outward*(-1))
+  else if AdjustTarget and not Target.Locked and
+    TryEndpoint(Index,OwnPosition,OwnOutward) then
+    Target.AlignEndpointTangent(TargetIndex,OwnOutward*(-1));
+  Result:=True;
 end;
 
 function TVectArtPathLayer.GetVertices: TArray<TMapRakuVertex>;

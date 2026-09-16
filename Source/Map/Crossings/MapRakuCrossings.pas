@@ -30,24 +30,15 @@ type
     EndPosition: TPointF;
   end;
 
+// 高さ区間・現在形状・明示指定から再計算する。移動で消えた交差を残さない。
 function CalculateMapRakuCrossings(Document: TVectArtDocument):
   TArray<TMapRakuCrossing>;
+// 交差関係の分類用。橋側線の幾何的な連結はMapRakuBridgeSpansが担当する。
 function GroupMapRakuRailCrossings(
   const Crossings: TArray<TMapRakuCrossing>): TArray<TMapRakuCrossingGroup>;
-function MapCrossingPathSection(Path: TVectArtPathLayer;
-  Distance, HalfLength: Single): TArray<TPointF>;
-function MapCrossingPathWidth(Path: TVectArtPathLayer): Single;
-
 implementation
 
-uses System.Generics.Collections, System.Math, System.SysUtils;
-
-type
-  TPathSample = record
-    P: TPointF;
-    Segment: Integer;
-    PathParameter: Single;
-  end;
+uses System.Generics.Collections, System.Math, System.SysUtils, MapRakuCrossingGeometry;
 
 function IsRail(const S: string): Boolean;
 begin
@@ -57,82 +48,6 @@ end;
 function IsCrossingPath(const S:string):Boolean;
 begin
   Result:=SameText(S,'road') or IsRail(S) or SameText(S,'river');
-end;
-
-function Cubic(const A, B, C, D: TPointF; T: Single): TPointF;
-var U: Single;
-begin
-  U := 1-T;
-  Result := TPointF.Create(U*U*U*A.X + 3*U*U*T*B.X +
-    3*U*T*T*C.X + T*T*T*D.X, U*U*U*A.Y + 3*U*U*T*B.Y +
-    3*U*T*T*C.Y + T*T*T*D.Y);
-end;
-
-function Samples(Path: TVectArtPathLayer): TArray<TPathSample>;
-const STEPS = 64;
-var I, J, N, Next, Count: Integer; V: TArray<TMapRakuVertex>; A, B, C, D: TPointF;
-  S: TPathSample;
-begin
-  V := Path.Vertices;
-  Result := nil;
-  if Length(V)<2 then Exit;
-  Count:=Length(V)-1;
-  if Path.Closed then Inc(Count);
-  for I:=0 to Count-1 do
-  begin
-    Next:=(I+1) mod Length(V);
-    A:=V[I].Position; D:=V[Next].Position;
-    B:=TPointF.Create(A.X+V[I].OutgoingControl.X,A.Y+V[I].OutgoingControl.Y);
-    C:=TPointF.Create(D.X+V[Next].IncomingControl.X,D.Y+V[Next].IncomingControl.Y);
-    N:=1;
-    if V[I].OutgoingSegment=slskCubicBezier then N:=STEPS;
-    for J:=0 to N-1 do
-    begin
-      S.Segment:=I; S.PathParameter:=J/N;
-      if N=1 then S.P:=A else S.P:=Cubic(A,B,C,D,J/N);
-      S.P:=Path.Transform.Map(S.P);
-      Result:=Result+[S];
-    end;
-  end;
-  S.Segment:=Count-1; S.PathParameter:=1;
-  S.P:=Path.Transform.Map(V[Count mod Length(V)].Position); Result:=Result+[S];
-end;
-
-function MapCrossingPathWidth(Path: TVectArtPathLayer): Single;
-var O, X, Y: TPointF;
-begin
-  O:=Path.Transform.Map(PointF(0,0));
-  X:=Path.Transform.Map(PointF(1,0));
-  Y:=Path.Transform.Map(PointF(0,1));
-  Result:=Max(2,Path.StrokeWidth)*Max(Hypot(X.X-O.X,X.Y-O.Y),
-    Hypot(Y.X-O.X,Y.Y-O.Y));
-end;
-
-function MapCrossingPathSection(Path: TVectArtPathLayer;
-  Distance, HalfLength: Single): TArray<TPointF>;
-var S: TArray<TPathSample>; I: Integer; D,L,A,B: Single;
-  function Interpolate(T: Single): TPointF;
-  begin
-    Result:=PointF(S[I].P.X+(S[I+1].P.X-S[I].P.X)*T,
-      S[I].P.Y+(S[I+1].P.Y-S[I].P.Y)*T);
-  end;
-begin
-  Result:=nil; S:=Samples(Path); D:=0;
-  for I:=0 to High(S)-1 do
-  begin
-    L:=Hypot(S[I+1].P.X-S[I].P.X,S[I+1].P.Y-S[I].P.Y);
-    if L>1E-6 then
-    begin
-      A:=Max(0,Distance-HalfLength-D);
-      B:=Min(L,Distance+HalfLength-D);
-      if B>A then
-      begin
-        if Length(Result)=0 then Result:=Result+[Interpolate(A/L)];
-        Result:=Result+[Interpolate(B/L)];
-      end;
-    end;
-    D:=D+L;
-  end;
 end;
 
 function SegmentIntersection(const A, B, C, D:TPointF; out P:TPointF;
@@ -164,7 +79,7 @@ begin
 end;
 
 function CalculateMapRakuCrossings(Document:TVectArtDocument):TArray<TMapRakuCrossing>;
-var I,J,K,L:Integer; A,B:TVectArtPathLayer; SA,SB:TArray<TPathSample>;
+var I,J,K,L:Integer; A,B:TVectArtPathLayer; SA,SB:TArray<TMapCrossingSample>;
   P:TPointF; TA,TB:Single; C:TMapRakuCrossing; SameLevel:Boolean;
   Existing:TMapRakuCrossing; Duplicate:Boolean; TextSwap:string;
   IntSwap:Integer; FloatSwap:Single;
@@ -197,7 +112,7 @@ begin
       for J:=I+1 to Paths.Count-1 do
         begin
           A:=Paths[I]; B:=Paths[J];
-          SA:=Samples(A); SB:=Samples(B); SameLevel:=Levels[I]=Levels[J];
+          SA:=SampleMapCrossingPath(A); SB:=SampleMapCrossingPath(B); SameLevel:=Levels[I]=Levels[J];
           DA:=0;
           for K:=0 to High(SA)-1 do begin
           DB:=0;
