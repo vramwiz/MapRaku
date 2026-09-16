@@ -52,8 +52,9 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win64)'!=''">
         <VerInfo_Locale>1041</VerInfo_Locale>
-        <UWP_DelphiLogo44>Image\Icon_2.png</UWP_DelphiLogo44>
-        <UWP_DelphiLogo150>Image\Icon_2.png</UWP_DelphiLogo150>
+        <UWP_DelphiLogo44>Image\Icon.png</UWP_DelphiLogo44>
+        <UWP_DelphiLogo150>Image\Icon.png</UWP_DelphiLogo150>
+        <Icon_MainIcon>Image\Icon_multi.ico</Icon_MainIcon>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1)'!=''">
         <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
@@ -64,9 +65,9 @@
     <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
         <BT_BuildType>Debug</BT_BuildType>
         <VerInfo_Locale>1041</VerInfo_Locale>
-        <Icon_MainIcon>Image\Icon_2.ico</Icon_MainIcon>
-        <UWP_DelphiLogo44>Image\Icon_2.png</UWP_DelphiLogo44>
-        <UWP_DelphiLogo150>Image\Icon_2.png</UWP_DelphiLogo150>
+        <Icon_MainIcon>Image\Icon_multi.ico</Icon_MainIcon>
+        <UWP_DelphiLogo44>Image\Icon.png</UWP_DelphiLogo44>
+        <UWP_DelphiLogo150>Image\Icon.png</UWP_DelphiLogo150>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_Define>RELEASE;$(DCC_Define)</DCC_Define>
@@ -76,8 +77,8 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2_Win64)'!=''">
         <VerInfo_Locale>1041</VerInfo_Locale>
-        <UWP_DelphiLogo44>Image\Icon_2.png</UWP_DelphiLogo44>
-        <UWP_DelphiLogo150>Image\Icon_2.png</UWP_DelphiLogo150>
+        <UWP_DelphiLogo44>Image\Icon.png</UWP_DelphiLogo44>
+        <UWP_DelphiLogo150>Image\Icon.png</UWP_DelphiLogo150>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">
@@ -277,7 +278,7 @@
                 <Platform value="Win64">True</Platform>
             </Platforms>
             <Deployment Version="5">
-                <DeployFile LocalName="Image\Icon_2.png" Configuration="Debug" Class="UWP_DelphiLogo44">
+                <DeployFile LocalName="Image\Icon.png" Configuration="Debug" Class="UWP_DelphiLogo44">
                     <Platform Name="Win64">
                         <RemoteDir>Assets\</RemoteDir>
                         <RemoteName>Logo44x44.png</RemoteName>
