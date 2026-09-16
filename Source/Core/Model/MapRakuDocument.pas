@@ -46,7 +46,7 @@ type
   // 穴や重複輪郭を含むShapeの内外判定規則。
   TMapRakuFillRule = (slfrEvenOdd, slfrNonZero);
   TMapRakuCrossingKind = (mckNormal, mckRailroadCrossing, mckOverpass,
-    mckBridge, mckRailOverpass, mckNone);
+    mckBridge, mckRailOverpass, mckNone, mckUnderpass, mckTunnel);
 
   TMapRakuCrossingRelation = class
   public

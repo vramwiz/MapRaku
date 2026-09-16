@@ -300,6 +300,10 @@ begin
     CrossingEnabled).Tag:=23;
   CrossingBuilder.AddItem('跨線橋', CrossingObjectClick,
     CrossingEnabled).Tag:=24;
+  CrossingBuilder.AddItem('アンダーパス', CrossingObjectClick,
+    CrossingEnabled).Tag:=31;
+  CrossingBuilder.AddItem('トンネル', CrossingObjectClick,
+    CrossingEnabled).Tag:=32;
   CrossingBuilder.AddItem('表現なし', CrossingObjectClick,
     CrossingEnabled).Tag:=25;
   CrossingBuilder.AddSeparator;
@@ -388,6 +392,8 @@ begin
     28: RangeMargin:=6;
     29: RangeMargin:=12;
     30: RangeMargin:=24;
+    31: Kind:=mckUnderpass;
+    32: Kind:=mckTunnel;
   else Exit;
   end;
   SetMapCrossingRelation(FDocument,FEditHistory,

@@ -7,35 +7,8 @@ procedure ExportMapPng(Document: TVectArtDocument; const FileName: string);
 implementation
 uses System.Classes, System.SysUtils, System.Types, System.UITypes,
   System.Skia, System.Generics.Collections, Vcl.Graphics, MapRakuRenderer;
-procedure CollectMapLeaves(Layer: TVectArtLayer; Leaves: TList<TVectArtLayer>);
-var I: Integer;
-begin
-  if not Layer.Visible then Exit;
-  if Layer is TMapRakuGroupLayer then
-    for I := 0 to TMapRakuGroupLayer(Layer).ChildCount - 1 do
-      CollectMapLeaves(TMapRakuGroupLayer(Layer)[I], Leaves)
-  else Leaves.Add(Layer);
-end;
-procedure DrawTree(Layer: TVectArtLayer; const Canvas: ISkCanvas;
-  W, H: Integer; Opacity: Single);
-var I: Integer; G: TMapRakuGroupLayer; Leaves: TList<TVectArtLayer>;
-begin
-  if not Layer.Visible then Exit;
-  if Layer is TMapRakuGroupLayer then begin
-    G := TMapRakuGroupLayer(Layer);
-    if G.MapSurface then begin
-      Leaves := TList<TVectArtLayer>.Create;
-      try
-        CollectMapLeaves(G, Leaves);
-        RenderMapLayersToCanvas(Leaves.ToArray, Canvas, W, H, Opacity * G.Opacity, 1);
-        RenderMapLayersToCanvas(Leaves.ToArray, Canvas, W, H, Opacity * G.Opacity, 2);
-      finally Leaves.Free; end;
-    end else
-      for I := 0 to G.ChildCount - 1 do DrawTree(G[I], Canvas, W, H, Opacity * G.Opacity);
-  end else RenderMapLayersToCanvas([Layer], Canvas, W, H, Opacity);
-end;
 procedure DrawDocument(Document: TVectArtDocument; const Canvas: ISkCanvas);
-var I: Integer; C: TColor; P: ISkPaint;
+var C: TColor; P: ISkPaint;
 begin
   if not Document.CanvasLayer.Transparent then begin
     C := ColorToRGB(Document.CanvasLayer.BackgroundColor);
@@ -44,9 +17,7 @@ begin
       (Cardinal(C shr 16) and $FF);
     Canvas.DrawRect(TRectF.Create(0, 0, Document.CanvasLayer.Width, Document.CanvasLayer.Height), P);
   end;
-  for I := 1 to Document.LayerCount - 1 do
-    DrawTree(Document[I], Canvas, Document.CanvasLayer.Width, Document.CanvasLayer.Height, 1);
-  RenderMapRakuCrossingExpressionsToCanvas(Document,Canvas);
+  RenderMapDocumentToCanvas(Document,Canvas);
 end;
 procedure ExportMapSvg(Document: TVectArtDocument; const FileName: string);
 var Stream: TFileStream; Canvas: ISkCanvas;

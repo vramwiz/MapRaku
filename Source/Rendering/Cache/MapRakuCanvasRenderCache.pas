@@ -75,6 +75,16 @@ end;
 procedure TMapRakuCanvasRenderCache.BeginMove(
   Document: TVectArtDocument; LayerIndex, Width, Height: Integer;
   PreviewStrokeWidth: Single);
+  function ContainsMapPath(Layer: TVectArtLayer): Boolean;
+  var I: Integer;
+  begin
+    Result:=(Layer is TVectArtPathLayer) and
+      (TVectArtPathLayer(Layer).MapElement<>'');
+    if Result then Exit;
+    if Layer is TMapRakuGroupLayer then
+      for I:=0 to TMapRakuGroupLayer(Layer).ChildCount-1 do
+        if ContainsMapPath(TMapRakuGroupLayer(Layer)[I]) then Exit(True);
+  end;
 begin
   EndMove;
   FMoveAttempted := True;
@@ -83,6 +93,8 @@ begin
     not TryGetMapRakuLayerBounds(Document[LayerIndex],
       FMoveStartBounds) then
     Exit;
+  // 地図経路の移動では交差・切れ目が双方で変化するため毎回再描画する。
+  if ContainsMapPath(Document[LayerIndex]) then Exit;
   RenderVectArtDocumentRange(Document, FMoveLower, Width, Height,
     1, LayerIndex - 1, PreviewStrokeWidth);
   RenderVectArtDocumentRange(Document, FMoveSelected, Width, Height,

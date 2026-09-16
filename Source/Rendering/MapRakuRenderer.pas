@@ -62,8 +62,8 @@ procedure CompositeVectArtRgbaOffset(const Source: TVectArtRenderBuffer;
 // SVGと画面で共通の描画処理を使用する。Canvasは呼び出し元が所有する。
 procedure RenderMapLayersToCanvas(const Layers: TArray<TVectArtLayer>;
   const Canvas: ISkCanvas; Width, Height: Integer; Opacity: Single; MapPass: Integer = 0);
-// 交差関係の踏切・橋・高架表現を、文書と同じ中心原点でCanvasへベクター描画する。
-procedure RenderMapRakuCrossingExpressionsToCanvas(Document: TVectArtDocument;
+// 画面・PNG・SVGで層ごとの道路合成と下側経路の切り抜きを共用する。
+procedure RenderMapDocumentToCanvas(Document: TVectArtDocument;
   const Canvas: ISkCanvas);
 implementation
 
@@ -79,6 +79,182 @@ uses
 const
   MAX_RENDER_DIMENSION = 16384;
   SKIA_DEFAULT_STROKE_MITER_LIMIT = 4.0;
+
+type
+  TMapCrossingVisual = record
+    UpperId, LowerId: string;
+    Cut: ISkPath;
+    Marks: ISkPath;
+  end;
+  TMapCrossingRenderContext = class
+  private
+    FVisuals: TArray<TMapCrossingVisual>;
+    FMarkColor: TAlphaColor;
+    FCanvasPath: ISkPath;
+  public
+    constructor Create(Document: TVectArtDocument);
+    procedure ClipLower(const Canvas: ISkCanvas; Layer: TVectArtLayer);
+    procedure DrawMarks(const Canvas: ISkCanvas; Layer: TVectArtLayer;
+      Opacity: Single);
+  end;
+
+constructor TMapCrossingRenderContext.Create(Document: TVectArtDocument);
+var C: TMapRakuCrossing; V: TMapCrossingVisual; Upper, Lower: TVectArtPathLayer;
+  T, U, N, P: TPointF; Points: TArray<TPointF>;
+  Distance, LowerDistance, HalfLength, Margin, Sine, Cosine, UW, LW, Len, Offset: Single;
+  Relation: TMapRakuCrossingRelation; Builder, Marks: ISkPathBuilder;
+  Stroke: ISkPaint; I, Side: Integer;
+  function FindIn(Layer: TVectArtLayer; const Id: string): TVectArtPathLayer;
+  var K: Integer;
+  begin
+    Result:=nil;
+    if (Layer is TVectArtPathLayer) and (Layer.PersistentId=Id) then
+      Exit(TVectArtPathLayer(Layer));
+    if Layer is TMapRakuGroupLayer then
+      for K:=0 to TMapRakuGroupLayer(Layer).ChildCount-1 do begin
+        Result:=FindIn(TMapRakuGroupLayer(Layer)[K],Id);
+        if Result<>nil then Exit;
+      end;
+  end;
+  function Find(const Id: string): TVectArtPathLayer;
+  var K: Integer;
+  begin
+    Result:=nil;
+    for K:=1 to Document.LayerCount-1 do begin
+      Result:=FindIn(Document[K],Id); if Result<>nil then Exit;
+    end;
+  end;
+begin
+  inherited Create;
+  Builder:=TSkPathBuilder.Create;
+  Builder.AddRect(TRectF.Create(-Document.CanvasLayer.Width*0.5,
+    -Document.CanvasLayer.Height*0.5,Document.CanvasLayer.Width*0.5,
+    Document.CanvasLayer.Height*0.5));
+  FCanvasPath:=Builder.Detach;
+  FMarkColor:=TAlphaColorRec.Black;
+  if ColorToRGB(Document.CanvasLayer.BackgroundColor)=clBlack then
+    FMarkColor:=TAlphaColorRec.White;
+  for C in CalculateMapRakuCrossings(Document) do
+  begin
+    if not (C.Kind in [mckBridge,mckOverpass,mckRailOverpass,
+      mckUnderpass,mckTunnel,mckRailroadCrossing]) then Continue;
+    V:=Default(TMapCrossingVisual); V.UpperId:=C.UpperObjectId;
+    if C.UpperObjectId=C.ObjectAId then begin
+      V.LowerId:=C.ObjectBId; T:=C.TangentA; U:=C.TangentB; Distance:=C.DistanceA;
+      LowerDistance:=C.DistanceB;
+    end else begin
+      V.LowerId:=C.ObjectAId; T:=C.TangentB; U:=C.TangentA; Distance:=C.DistanceB;
+      LowerDistance:=C.DistanceA;
+    end;
+    Upper:=Find(V.UpperId); Lower:=Find(V.LowerId);
+    if (Upper=nil) or (Lower=nil) then Continue;
+    UW:=MapCrossingPathWidth(Upper); LW:=MapCrossingPathWidth(Lower);
+    if C.Kind=mckRailroadCrossing then begin
+      // 平面の踏切は実際の線路模様だけを優先し、立体交差用の余白を作らない。
+      // 全経路から模様を作ることでJRの白黒・枕木の位相も途中で変えない。
+      if not ((Upper.MapElement='jr') or (Upper.MapElement='rail')) then Continue;
+      Points:=MapCrossingPathSection(Upper,0,1E20);
+      if Length(Points)<2 then Continue;
+      Builder:=TSkPathBuilder.Create; Builder.MoveTo(Points[0]);
+      for I:=1 to High(Points) do Builder.LineTo(Points[I]);
+      Stroke:=TSkPaint.Create(TSkPaintStyle.Stroke);
+      Stroke.StrokeWidth:=UW; Stroke.StrokeJoin:=TSkStrokeJoin.Round;
+      if Upper.MapElement='rail' then Stroke.StrokeWidth:=Max(1,UW*0.15);
+      V.Cut:=Stroke.GetFillPath(Builder.Snapshot);
+      FVisuals:=FVisuals+[V];
+      if Upper.MapElement='rail' then begin
+        Stroke.StrokeWidth:=UW;
+        Stroke.PathEffect:=TSkPathEffect.MakeDash([1.5,Max(3,UW*0.8)],0);
+        V.Cut:=Stroke.GetFillPath(Builder.Detach);
+        FVisuals:=FVisuals+[V];
+      end;
+      Continue;
+    end;
+    Sine:=Max(1E-6,Abs(T.X*U.Y-T.Y*U.X));
+    Cosine:=Abs(T.X*U.X+T.Y*U.Y);
+    Margin:=12;
+    Relation:=Document.FindCrossingRelation(C.ObjectAId,C.ObjectBId);
+    if Relation<>nil then Margin:=Relation.RangeMargin;
+    if C.Kind=mckTunnel then begin
+      HalfLength:=((UW*0.5+10)+(LW*0.5+1)*Cosine)/Sine+Margin;
+      Points:=MapCrossingPathSection(Lower,LowerDistance,HalfLength);
+      if Length(Points)<2 then Continue;
+      Builder:=TSkPathBuilder.Create; Builder.MoveTo(Points[0]);
+      for I:=1 to High(Points) do Builder.LineTo(Points[I]);
+      Stroke:=TSkPaint.Create(TSkPaintStyle.Stroke);
+      Stroke.StrokeWidth:=LW+4; Stroke.StrokeCap:=TSkStrokeCap.Butt;
+      Stroke.StrokeJoin:=TSkStrokeJoin.Round;
+      V.Cut:=Stroke.GetFillPath(Builder.Detach);
+      Marks:=TSkPathBuilder.Create;
+      for Side:=0 to 1 do begin
+        if Side=0 then begin P:=Points[0]; T:=Points[1]-P; end
+        else begin P:=Points[High(Points)]; T:=Points[High(Points)-1]-P; end;
+        Len:=Hypot(T.X,T.Y); if Len<1E-6 then Continue;
+        T:=T/Len; N:=PointF(-T.Y,T.X)*(LW*0.5+4);
+        Marks.MoveTo(P-N-T*2); Marks.QuadTo(P+T*6,P+N-T*2);
+      end;
+      V.Marks:=Marks.Detach; FVisuals:=FVisuals+[V]; Continue;
+    end;
+    // 斜交・太い下側経路でも、縁が橋区間の端からはみ出さない長さ。
+    HalfLength:=Max(12,((LW+2)*0.5+(UW*0.5+10)*Cosine)/Sine+Margin);
+    Points:=MapCrossingPathSection(Upper,Distance,HalfLength);
+    if Length(Points)<2 then Continue;
+    Builder:=TSkPathBuilder.Create; Builder.MoveTo(Points[0]);
+    for I:=1 to High(Points) do Builder.LineTo(Points[I]);
+    Stroke:=TSkPaint.Create(TSkPaintStyle.Stroke);
+    Stroke.StrokeWidth:=UW+20; Stroke.StrokeCap:=TSkStrokeCap.Butt;
+    Stroke.StrokeJoin:=TSkStrokeJoin.Round;
+    // 白塗りや全体消去ではなく、下側のレイヤーだけに差分クリップする。
+    // 橋本体、側線、端の開きと余白を含め、透明背景でも切れ目を残す。
+    V.Cut:=Stroke.GetFillPath(Builder.Detach);
+    Marks:=TSkPathBuilder.Create;
+    for Side:=-1 to 1 do begin
+      if Side=0 then Continue;
+      for I:=0 to High(Points) do begin
+        if I=High(Points) then T:=Points[I]-Points[I-1]
+        else T:=Points[I+1]-Points[I];
+        Len:=Hypot(T.X,T.Y); if Len<1E-6 then Continue;
+        N:=PointF(-T.Y/Len,T.X/Len); Offset:=Side*(UW*0.5+4);
+        P:=Points[I]+N*Offset;
+        if I=0 then begin
+          if C.Kind=mckUnderpass then Marks.MoveTo(P)
+          else begin Marks.MoveTo(P-T/Len*3+N*(Side*3)); Marks.LineTo(P); end;
+        end else Marks.LineTo(P);
+        if (I=High(Points)) and (C.Kind<>mckUnderpass) then
+          Marks.LineTo(P+T/Len*3+N*(Side*3));
+      end;
+    end;
+    V.Marks:=Marks.Detach;
+    FVisuals:=FVisuals+[V];
+  end;
+  // 残す領域は描画パスごとではなく、この文書描画の準備時に一度作る。
+  for I:=0 to High(FVisuals) do
+    FVisuals[I].Cut:=FCanvasPath.Op(FVisuals[I].Cut,TSkPathOp.Difference);
+end;
+
+procedure TMapCrossingRenderContext.ClipLower(const Canvas: ISkCanvas;
+  Layer: TVectArtLayer);
+var V: TMapCrossingVisual;
+begin
+  for V in FVisuals do
+    if V.LowerId=Layer.PersistentId then
+      // SVGCanvasはDifferenceクリップを反転せず出力するため、先に
+      // ベクターの差分を求め、残す領域を通常のIntersectで指定する。
+      Canvas.ClipPath(V.Cut,TSkClipOp.Intersect,True);
+end;
+
+procedure TMapCrossingRenderContext.DrawMarks(const Canvas: ISkCanvas;
+  Layer: TVectArtLayer; Opacity: Single);
+var V: TMapCrossingVisual; Paint: ISkPaint;
+begin
+  Paint:=TSkPaint.Create(TSkPaintStyle.Stroke);
+  Paint.Color:=FMarkColor; Paint.AlphaF:=Layer.Opacity*Opacity;
+  Paint.StrokeWidth:=2; Paint.StrokeCap:=TSkStrokeCap.Butt;
+  Paint.StrokeJoin:=TSkStrokeJoin.Round; Paint.AntiAlias:=True;
+  for V in FVisuals do
+    if (V.UpperId=Layer.PersistentId) and (V.Marks<>nil) then
+      Canvas.DrawPath(V.Marks,Paint);
+end;
 
 function BuildMapRakuImageFilter(
   Filter: TMapRakuFilter; ScaleX: Single = 1.0;
@@ -132,23 +308,49 @@ procedure RenderVectArtLayerTree(Layer: TVectArtLayer;
   Target: TVectArtRenderBuffer; Width, Height: Integer;
   const LogicalBounds: TRectF; MinimumStrokeWidth,
   OpacityMultiplier: Single; InputTextLayer: TMapRakuTextLayer;
-  InputTextOutlineColor: TColor); forward;
+  InputTextOutlineColor: TColor;
+  Crossings: TMapCrossingRenderContext = nil;
+  const OutputCanvas: ISkCanvas = nil); forward;
 procedure RenderVectArtLayers(const RenderLayers: TArray<TVectArtLayer>;
   Target: TVectArtRenderBuffer; Width, Height: Integer;
   const LogicalBounds: TRectF; MinimumStrokeWidth,
   OpacityMultiplier: Single; InputTextLayer: TMapRakuTextLayer;
-  InputTextOutlineColor: TColor; MapPass: Integer = 0; const OutputCanvas: ISkCanvas = nil); forward;
+  InputTextOutlineColor: TColor; MapPass: Integer = 0;
+  const OutputCanvas: ISkCanvas = nil;
+  Crossings: TMapCrossingRenderContext = nil); forward;
 
 procedure RenderVectArtLevelRanges(Document: TVectArtDocument;
   Target: TVectArtRenderBuffer; Width, Height, FirstLayerIndex,
   LastLayerIndex: Integer; const LogicalBounds: TRectF;
   MinimumStrokeWidth: Single; InputTextLayer: TMapRakuTextLayer;
-  InputTextOutlineColor: TColor);
+  InputTextOutlineColor: TColor; const OutputCanvas: ISkCanvas = nil);
 var
   Batch: TList<TVectArtLayer>;
+  Crossings: TMapCrossingRenderContext;
   HasMapPath: Boolean;
   I: Integer;
   LayerBuffer: TVectArtRenderBuffer;
+  function CanBatchMap(Layer: TVectArtLayer): Boolean;
+  var K: Integer;
+  begin
+    if Layer is TMapRakuGroupLayer then begin
+      if (Layer.Opacity<>1) or (Layer.FilterCount<>0) then Exit(False);
+      for K:=0 to TMapRakuGroupLayer(Layer).ChildCount-1 do
+        if not CanBatchMap(TMapRakuGroupLayer(Layer)[K]) then Exit(False);
+      Exit(True);
+    end;
+    Result:=(Layer is TVectArtPathLayer) and
+      (TVectArtPathLayer(Layer).MapElement<>'');
+  end;
+  procedure AddMapLeaves(Layer: TVectArtLayer);
+  var K: Integer;
+  begin
+    if not Layer.Visible then Exit;
+    if Layer is TMapRakuGroupLayer then
+      for K:=0 to TMapRakuGroupLayer(Layer).ChildCount-1 do
+        AddMapLeaves(TMapRakuGroupLayer(Layer)[K])
+    else begin Batch.Add(Layer); HasMapPath:=True; end;
+  end;
   procedure FlushBatch;
   begin
     if Batch.Count = 0 then Exit;
@@ -156,19 +358,19 @@ var
     begin
       RenderVectArtLayers(Batch.ToArray, LayerBuffer, Width, Height,
         LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
-        InputTextOutlineColor, 1);
-      CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
+        InputTextOutlineColor, 1, OutputCanvas, Crossings);
+      if OutputCanvas=nil then CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
       RenderVectArtLayers(Batch.ToArray, LayerBuffer, Width, Height,
         LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
-        InputTextOutlineColor, 2);
-      CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
+        InputTextOutlineColor, 2, OutputCanvas, Crossings);
+      if OutputCanvas=nil then CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
     end
     else
     begin
       RenderVectArtLayers(Batch.ToArray, LayerBuffer, Width, Height,
         LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
-        InputTextOutlineColor);
-      CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
+        InputTextOutlineColor, 0, OutputCanvas, Crossings);
+      if OutputCanvas=nil then CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
     end;
     Batch.Clear;
     HasMapPath := False;
@@ -179,6 +381,7 @@ begin
   Batch := TList<TVectArtLayer>.Create;
   HasMapPath := False;
   LayerBuffer := TVectArtRenderBuffer.Create;
+  Crossings := TMapCrossingRenderContext.Create(Document);
   try
     for I := FirstLayerIndex to LastLayerIndex do
     begin
@@ -190,11 +393,16 @@ begin
       if not Document[I].Visible then Continue;
       if Document[I] is TMapRakuGroupLayer then
       begin
+        // 整理用グループを高さの境界として扱わない。
+        if CanBatchMap(Document[I]) then begin
+          AddMapLeaves(Document[I]); Continue;
+        end;
         FlushBatch;
         RenderVectArtLayerTree(Document[I], LayerBuffer, Width, Height,
           LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
-          InputTextOutlineColor);
-        CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
+          InputTextOutlineColor, Crossings, OutputCanvas);
+        if OutputCanvas=nil then
+          CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
       end
       else
       begin
@@ -205,6 +413,7 @@ begin
     end;
     FlushBatch;
   finally
+    Crossings.Free;
     LayerBuffer.Free;
     Batch.Free;
   end;
@@ -614,222 +823,20 @@ begin
       Round(Target.Pixels[I].A * Opacity), 0, 255);
 end;
 
-procedure RenderMapRakuCrossingExpressions(Document: TVectArtDocument;
-  Target: TVectArtRenderBuffer; Width, Height: Integer;
-  const LogicalBounds: TRectF; const OutputCanvas: ISkCanvas = nil);
-var
-  Canvas: ISkCanvas;
-  Crossings: TArray<TMapRakuCrossing>;
-  Groups: TArray<TMapRakuCrossingGroup>;
-  C: TMapRakuCrossing;
-  G: TMapRakuCrossingGroup;
-  ImageInfo: TSkImageInfo;
-  Paint: ISkPaint;
-  Surface: ISkSurface;
-  ScaleX,ScaleY:Single;
-  P1,P2,N,T:TPointF;
-  I:Integer;
-  Relation:TMapRakuCrossingRelation;
-  HalfLength:Single;
-  UpperPath:TVectArtPathLayer;
-  function Add(const P,V:TPointF; Amount:Single):TPointF;
-  begin Result:=TPointF.Create(P.X+V.X*Amount,P.Y+V.Y*Amount); end;
-  procedure Line(const A,B:TPointF; Color:TAlphaColor; Stroke:Single);
-  begin
-    Paint.Color:=Color; Paint.StrokeWidth:=Stroke;
-    Paint.Style:=TSkPaintStyle.Stroke; Canvas.DrawLine(A,B,Paint);
-  end;
-  function FindPathById(L:TVectArtLayer; const Id:string):TVectArtPathLayer;
-  var K:Integer;
-  begin
-    if (L is TVectArtPathLayer) and (L.PersistentId=Id) then
-      Exit(TVectArtPathLayer(L));
-    if L is TMapRakuGroupLayer then
-      for K:=0 to TMapRakuGroupLayer(L).ChildCount-1 do
-      begin
-        Result:=FindPathById(TMapRakuGroupLayer(L)[K],Id);
-        if Result<>nil then Exit;
-      end;
-    Result:=nil;
-  end;
-  function DocumentPathById(const Id:string):TVectArtPathLayer;
-  var K:Integer;
-  begin
-    Result:=nil;
-    for K:=1 to Document.LayerCount-1 do
-    begin
-      Result:=FindPathById(Document[K],Id);
-      if Result<>nil then Exit;
-    end;
-  end;
-  function GroupHasExplicitRelation(const Group:TMapRakuCrossingGroup):Boolean;
-  var K:Integer;
-  begin
-    Result:=False;
-    for K:=0 to High(Group.TargetIds) do
-      if Document.FindCrossingRelation(Group.SubjectId,
-        Group.TargetIds[K])<>nil then Exit(True);
-  end;
-  procedure DrawBridgeMarks(const Center,Direction:TPointF; HalfLength:Single;
-    Deck:TVectArtPathLayer);
-  var A,B,Perp:TPointF; DeckWidth,Offset:Single;
-  begin
-    DeckWidth:=16;
-    if Deck<>nil then DeckWidth:=Max(Deck.StrokeWidth,4);
-    Perp:=TPointF.Create(-Direction.Y,Direction.X);
-    Offset:=DeckWidth*0.5+4;
-    A:=Add(Center,Direction,-HalfLength);
-    B:=Add(Center,Direction,HalfLength);
-    Paint.StrokeCap:=TSkStrokeCap.Butt;
-    Line(Add(A,Perp,-Offset),Add(B,Perp,-Offset),TAlphaColorRec.Black,2);
-    Line(Add(A,Perp,Offset),Add(B,Perp,Offset),TAlphaColorRec.Black,2);
-    Paint.StrokeCap:=TSkStrokeCap.Square;
-  end;
-  procedure DrawDeck(const Center,Direction:TPointF; HalfLength:Single;
-    Deck:TVectArtPathLayer);
-  var A,B:TPointF; DeckWidth:Single; RGB:TColor;
-    BodyColor,EdgeColor:TAlphaColor; Builder:ISkPathBuilder; DeckPath:ISkPath;
-  begin
-    A:=Add(Center,Direction,-HalfLength); B:=Add(Center,Direction,HalfLength);
-    DeckWidth:=16;
-    if Deck<>nil then DeckWidth:=Max(Deck.StrokeWidth,4);
-    if (Deck<>nil) and (Deck.MapElement='road') then
-    begin
-      RGB:=ColorToRGB(Deck.StrokeColor);
-      BodyColor:=$FF000000 or (Cardinal(RGB and $FF) shl 16) or
-        Cardinal(RGB and $FF00) or (Cardinal(RGB shr 16) and $FF);
-      if ((RGB and $FF)+((RGB shr 8) and $FF)+((RGB shr 16) and $FF))>384 then
-        EdgeColor:=$FF555555 else EdgeColor:=$FFD0D0D0;
-      // 交差区間の端は道路端点ではない。幅の異なるSquare capが括弧状に
-      // はみ出さないよう、縁と本体を同じButt端で揃える。
-      Paint.StrokeCap:=TSkStrokeCap.Butt;
-      Line(A,B,EdgeColor,DeckWidth+2);
-      Line(A,B,BodyColor,DeckWidth);
-      Paint.StrokeCap:=TSkStrokeCap.Square;
-    end else if (Deck<>nil) and
-      ((Deck.MapElement='jr') or (Deck.MapElement='rail')) then
-    begin
-      // 明示的に線路を上側へ置く場合は、橋区間の線路本体も不透明に
-      // 描き直して、後から描かれた下側道路が模様の間へ透けるのを防ぐ。
-      Builder:=TSkPathBuilder.Create;
-      Builder.MoveTo(A); Builder.LineTo(B); DeckPath:=Builder.Detach;
-      DrawMapRail(Canvas,DeckPath,Deck,1);
-    end;
-    // 橋パーツは経路本体の端ではなく、その外側に添える短い平行線。
-    DrawBridgeMarks(Center,Direction,HalfLength,Deck);
-  end;
-begin
-  if Document=nil then Exit;
-  if (OutputCanvas=nil) and ((Target=nil) or (Target.Data=nil)) then Exit;
-  Crossings:=CalculateMapRakuCrossings(Document);
-  if Length(Crossings)=0 then Exit;
-  // 複数の線路を1区間へ束ねる処理は、単独交差の橋表示へ干渉するため
-  // 一時停止する。各交差を独立して描画する。
-  Groups:=nil;
-  if OutputCanvas=nil then
-  begin
-    ImageInfo:=TSkImageInfo.Create(Width,Height,TSkColorType.RGBA8888,
-      TSkAlphaType.Unpremul);
-    Surface:=TSkSurface.MakeRasterDirect(ImageInfo,Target.Data,Target.Stride);
-    if Surface=nil then Exit;
-    Canvas:=Surface.Canvas;
-  end else Canvas:=OutputCanvas;
-  Paint:=TSkPaint.Create(TSkPaintStyle.Stroke);
-  Paint.AntiAlias:=True; Paint.StrokeCap:=TSkStrokeCap.Square;
-  ScaleX:=Width/LogicalBounds.Width; ScaleY:=Height/LogicalBounds.Height;
-  Canvas.Save;
-  try
-    if OutputCanvas=nil then
-    begin
-      Canvas.Scale(ScaleX,ScaleY);
-      Canvas.Translate(-LogicalBounds.Left,-LogicalBounds.Top);
-    end else
-      Canvas.Translate(Document.CanvasLayer.Width*0.5,
-        Document.CanvasLayer.Height*0.5);
-    for C in Crossings do
-    begin
-      if C.Kind in [mckNormal,mckNone] then Continue;
-      // 複数線路を束ねる関係は後段で1本の表現へまとめる。
-      for G in Groups do
-        if (Length(G.TargetIds)>1) and (G.SubjectId=C.ObjectAId) and
-          (G.Kind=C.Kind) then Break;
-      if (Length(Groups)>0) and (Length(G.TargetIds)>1) and
-        (G.SubjectId=C.ObjectAId) and (G.Kind=C.Kind) then Continue;
-      if C.UpperObjectId=C.ObjectBId then T:=C.TangentB else T:=C.TangentA;
-      UpperPath:=DocumentPathById(C.UpperObjectId);
-      if Hypot(T.X,T.Y)<0.5 then T:=TPointF.Create(1,0);
-      N:=TPointF.Create(-T.Y,T.X);
-      HalfLength:=20;
-      Relation:=Document.FindCrossingRelation(C.ObjectAId,C.ObjectBId);
-      if Relation<>nil then HalfLength:=Max(12,Relation.RangeMargin+8);
-      case C.Kind of
-        mckRailroadCrossing:
-          begin
-            Line(Add(C.Position,T,-15),Add(C.Position,T,15),
-              TAlphaColorRec.White,12);
-            for I:=-2 to 2 do
-            begin
-              P1:=Add(Add(C.Position,T,I*6),N,-7);
-              P2:=Add(Add(C.Position,T,I*6),N,7);
-              Line(P1,P2,TAlphaColorRec.Black,1.5);
-            end;
-          end;
-        mckBridge:
-          DrawDeck(C.Position,T,HalfLength,UpperPath);
-        mckOverpass,mckRailOverpass:
-          // 自動判定時も橋パーツは表示するが、経路本体を短い線として
-          // 描き直さない。上側経路を連続させたまま外側の平行線だけを足す。
-          if Relation<>nil then DrawDeck(C.Position,T,HalfLength,UpperPath)
-          else DrawBridgeMarks(C.Position,T,HalfLength,UpperPath);
-      end;
-    end;
-    for G in Groups do
-      if Length(G.TargetIds)>1 then
-      begin
-        T:=TPointF.Create(G.EndPosition.X-G.StartPosition.X,
-          G.EndPosition.Y-G.StartPosition.Y);
-        ScaleX:=Hypot(T.X,T.Y);
-        if ScaleX<0.5 then T:=TPointF.Create(1,0)
-        else T:=TPointF.Create(T.X/ScaleX,T.Y/ScaleX);
-        P1:=Add(G.StartPosition,T,-14); P2:=Add(G.EndPosition,T,14);
-        if G.Kind=mckRailroadCrossing then
-        begin
-          Line(P1,P2,TAlphaColorRec.White,12);
-          N:=TPointF.Create(-T.Y,T.X);
-          for I:=0 to 6 do
-          begin
-            ScaleX:=I/6;
-            P1:=TPointF.Create(G.StartPosition.X+(G.EndPosition.X-G.StartPosition.X)*ScaleX,
-              G.StartPosition.Y+(G.EndPosition.Y-G.StartPosition.Y)*ScaleX);
-            Line(Add(P1,N,-7),Add(P1,N,7),TAlphaColorRec.Black,1.5);
-          end;
-        end else begin
-          UpperPath:=DocumentPathById(G.SubjectId);
-          if GroupHasExplicitRelation(G) then
-            DrawDeck(TPointF.Create((P1.X+P2.X)/2,(P1.Y+P2.Y)/2),
-              T,Hypot(P2.X-P1.X,P2.Y-P1.Y)/2,UpperPath)
-          else
-            DrawBridgeMarks(TPointF.Create((P1.X+P2.X)/2,(P1.Y+P2.Y)/2),
-              T,Hypot(P2.X-P1.X,P2.Y-P1.Y)/2,UpperPath);
-        end;
-      end;
-  finally
-    Canvas.Restore;
-  end;
-end;
-
-procedure RenderMapRakuCrossingExpressionsToCanvas(Document: TVectArtDocument;
+procedure RenderMapDocumentToCanvas(Document: TVectArtDocument;
   const Canvas: ISkCanvas);
-var Bounds:TRectF;
+var Bounds: TRectF; Buffer: TVectArtRenderBuffer;
 begin
-  if (Document=nil) or (Canvas=nil) or (Document.CanvasLayer=nil) then Exit;
+  if (Document=nil) or (Canvas=nil) then Exit;
   Bounds:=TRectF.Create(-Document.CanvasLayer.Width*0.5,
     -Document.CanvasLayer.Height*0.5,Document.CanvasLayer.Width*0.5,
     Document.CanvasLayer.Height*0.5);
-  RenderMapRakuCrossingExpressions(Document,nil,Document.CanvasLayer.Width,
-    Document.CanvasLayer.Height,Bounds,Canvas);
+  Buffer:=TVectArtRenderBuffer.Create;
+  try
+    RenderVectArtLevelRanges(Document,Buffer,Document.CanvasLayer.Width,
+      Document.CanvasLayer.Height,1,Document.LayerCount-1,Bounds,0,nil,clNone,Canvas);
+  finally Buffer.Free; end;
 end;
-
 procedure RenderVectArtDocument(Document: TVectArtDocument;
   Target: TVectArtRenderBuffer; Width, Height: Integer;
   MinimumStrokeWidth: Single;
@@ -855,7 +862,7 @@ begin
   RenderVectArtLevelRanges(Document, Target, Width, Height, 1,
     Document.LayerCount - 1, LogicalBounds, MinimumStrokeWidth,
     InputTextLayer, InputTextOutlineColor);
-  RenderMapRakuCrossingExpressions(Document,Target,Width,Height,LogicalBounds);
+
 end;
 
 function FitMapRakuThumbnailBounds(const ContentBounds: TRectF;
@@ -926,7 +933,8 @@ procedure RenderVectArtLayers(const RenderLayers: TArray<TVectArtLayer>;
   const LogicalBounds: TRectF; MinimumStrokeWidth,
   OpacityMultiplier: Single;
   InputTextLayer: TMapRakuTextLayer;
-  InputTextOutlineColor: TColor; MapPass: Integer; const OutputCanvas: ISkCanvas);
+  InputTextOutlineColor: TColor; MapPass: Integer; const OutputCanvas: ISkCanvas;
+  Crossings: TMapCrossingRenderContext);
 var
   ArcEndPoint: TPointF;
   ArcEndTangent: TPointF;
@@ -1027,6 +1035,8 @@ begin
   for I := 0 to High(RenderLayers) do
   begin
     Layer := RenderLayers[I];
+    Canvas.Save;
+    if Crossings<>nil then Crossings.ClipLower(Canvas,Layer);
     Canvas.Save;
     TransformMatrix := Layer.Transform.Matrix;
     Canvas.Concat(TransformMatrix);
@@ -1488,6 +1498,9 @@ begin
         Dec(FilterSaveCount);
       end;
       Canvas.Restore;
+      if (Crossings<>nil) and (MapPass<>1) then
+        Crossings.DrawMarks(Canvas,Layer,OpacityMultiplier);
+      Canvas.Restore;
     end;
   end;
   finally Canvas.Restore; end;
@@ -1499,12 +1512,14 @@ procedure RenderVectArtLayerTree(Layer: TVectArtLayer;
   const LogicalBounds: TRectF; MinimumStrokeWidth,
   OpacityMultiplier: Single;
   InputTextLayer: TMapRakuTextLayer;
-  InputTextOutlineColor: TColor);
+  InputTextOutlineColor: TColor; Crossings: TMapCrossingRenderContext;
+  const OutputCanvas: ISkCanvas);
 var
   ChildBuffer: TVectArtRenderBuffer;
   GroupLayer: TMapRakuGroupLayer;
   I: Integer;
   Flat: TList<TVectArtLayer>;
+  GroupPaint: ISkPaint;
   procedure Collect(L: TVectArtLayer);
   var K: Integer;
   begin
@@ -1520,23 +1535,29 @@ begin
   begin
     RenderVectArtLayers([Layer], Target, Width, Height, LogicalBounds,
       MinimumStrokeWidth, OpacityMultiplier, InputTextLayer,
-      InputTextOutlineColor);
+      InputTextOutlineColor,0,OutputCanvas,Crossings);
     Exit;
   end;
 
   Target.SetSize(Width, Height);
   Target.Clear;
   GroupLayer := TMapRakuGroupLayer(Layer);
+  if OutputCanvas<>nil then begin
+    GroupPaint:=TSkPaint.Create;
+    GroupPaint.AlphaF:=Layer.Opacity*OpacityMultiplier;
+    OutputCanvas.SaveLayer(GroupPaint);
+  end;
+  try
   if GroupLayer.MapSurface then
   begin
     Flat := TList<TVectArtLayer>.Create;
     ChildBuffer := TVectArtRenderBuffer.Create;
     try
       Collect(GroupLayer);
-      RenderVectArtLayers(Flat.ToArray, Target, Width, Height, LogicalBounds, MinimumStrokeWidth, 1, nil, clNone, 1);
-      RenderVectArtLayers(Flat.ToArray, ChildBuffer, Width, Height, LogicalBounds, MinimumStrokeWidth, 1, nil, clNone, 2);
-      CompositeVectArtRgba(ChildBuffer, Target.Data, Width, Height);
-      MultiplyMapRakuBufferOpacity(Target, Layer.Opacity * OpacityMultiplier);
+      RenderVectArtLayers(Flat.ToArray, Target, Width, Height, LogicalBounds, MinimumStrokeWidth, 1, nil, clNone, 1,OutputCanvas,Crossings);
+      RenderVectArtLayers(Flat.ToArray, ChildBuffer, Width, Height, LogicalBounds, MinimumStrokeWidth, 1, nil, clNone, 2,OutputCanvas,Crossings);
+      if OutputCanvas=nil then CompositeVectArtRgba(ChildBuffer, Target.Data, Width, Height);
+      MultiplyMapRakuBufferOpacity(Target,Layer.Opacity*OpacityMultiplier);
     finally ChildBuffer.Free; Flat.Free; end;
     Exit;
   end;
@@ -1547,8 +1568,8 @@ begin
       begin
         RenderVectArtLayerTree(GroupLayer[I], ChildBuffer, Width, Height,
           LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
-          InputTextOutlineColor);
-        CompositeVectArtRgba(ChildBuffer, Target.Data, Width, Height);
+          InputTextOutlineColor,Crossings,OutputCanvas);
+        if OutputCanvas=nil then CompositeVectArtRgba(ChildBuffer, Target.Data, Width, Height);
       end;
   finally
     ChildBuffer.Free;
@@ -1557,6 +1578,9 @@ begin
     Width / LogicalBounds.Width, Height / LogicalBounds.Height);
   MultiplyMapRakuBufferOpacity(Target,
     Layer.Opacity * OpacityMultiplier);
+  finally
+    if OutputCanvas<>nil then OutputCanvas.Restore;
+  end;
 end;
 
 procedure CompositeVectArtRgba(const Source: TVectArtRenderBuffer;
