@@ -105,6 +105,19 @@ begin
     ACanvas.Pen.Color := COLOR_ROW_ACTIVE
   else ACanvas.Pen.Color := COLOR_ROW_BORDER;
   ACanvas.FrameRect(ItemRect);
+  if Layer is TMapRakuLevelBoundaryLayer then
+  begin
+    ACanvas.Font.Color := COLOR_TEXT_PRIMARY;
+    ACanvas.Font.Style := [fsBold];
+    ACanvas.Brush.Style := bsClear;
+    ACanvas.TextOut(ItemRect.Left + Scale(10), ItemRect.Top + Scale(8),
+      Layer.Name);
+    ACanvas.Pen.Color := COLOR_TEXT_SECONDARY;
+    ACanvas.MoveTo(ItemRect.Left + Scale(10), ItemRect.Bottom - Scale(8));
+    ACanvas.LineTo(ItemRect.Right - Scale(10), ItemRect.Bottom - Scale(8));
+    ACanvas.Font.Style := [];
+    Exit;
+  end;
   if Active then
   begin
     ACanvas.Brush.Style := bsSolid;
@@ -250,6 +263,19 @@ begin
     ACanvas.Pen.Color := COLOR_ROW_ACTIVE
   else ACanvas.Pen.Color := COLOR_ROW_BORDER;
   ACanvas.FrameRect(ItemRect);
+  if Layer is TMapRakuLevelBoundaryLayer then
+  begin
+    ACanvas.Font.Color := COLOR_TEXT_PRIMARY;
+    ACanvas.Font.Style := [fsBold];
+    ACanvas.Brush.Style := bsClear;
+    ACanvas.TextOut(ItemRect.Left + Scale(10), ItemRect.Top + Scale(8),
+      Layer.Name);
+    ACanvas.Pen.Color := COLOR_TEXT_SECONDARY;
+    ACanvas.MoveTo(ItemRect.Left + Scale(10), ItemRect.Bottom - Scale(8));
+    ACanvas.LineTo(ItemRect.Right - Scale(10), ItemRect.Bottom - Scale(8));
+    ACanvas.Font.Style := [];
+    Exit;
+  end;
   if Active then
   begin
     ACanvas.Brush.Style := bsSolid;

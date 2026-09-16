@@ -605,6 +605,8 @@ begin
         LayerJson := TJSONObject(LayersJson.Items[I]);
         ValidateLayerFilters(LayerJson);
         LayerTypes[I] := ReadString(LayerJson, 'type');
+        if LayerTypes[I] = 'mapLevelBoundary' then
+          Continue;
         if LayerTypes[I] = 'group' then
         begin
           GroupJson := LayerJson;
@@ -1243,7 +1245,8 @@ begin
       if Canvas = nil then
         raise EInvalidOp.Create('Document canvas is missing');
       while Document.LayerCount > 1 do
-        if Document[Document.LayerCount - 1] is TMapRakuGroupLayer then
+        if (Document[Document.LayerCount - 1] is TMapRakuGroupLayer) or
+          (Document[Document.LayerCount - 1] is TMapRakuLevelBoundaryLayer) then
         begin
           ExtractedLayer := Document.ExtractLayer(Document.LayerCount - 1);
           ExtractedLayer.Free;
@@ -1294,6 +1297,10 @@ begin
       begin
         if LayerTypes[I] = 'ellipseArcShape' then
           Document.InsertEllipseArcShape(Document.LayerCount, ArcShapeData[I])
+        else if LayerTypes[I] = 'mapLevelBoundary' then
+          Document.InsertLayer(Document.LayerCount,
+            TMapRakuLevelBoundaryLayer.Create(ReadString(
+              TJSONObject(LayersJson.Items[I]), 'name')))
         else if LayerTypes[I] = 'group' then
         begin
           Document.InsertLayer(Document.LayerCount, GroupData[I]);

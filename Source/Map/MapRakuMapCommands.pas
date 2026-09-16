@@ -4,6 +4,7 @@ interface
 uses MapRakuDocument, MapRakuEditHistory, MapRakuEditorState;
 procedure InsertMapPath(Document: TVectArtDocument; History: TVectArtEditHistory;
   const Data: TVectArtPathData);
+procedure InsertMapLevelBoundary(Document:TVectArtDocument; History:TVectArtEditHistory);
 procedure DetachMapChild(Document: TVectArtDocument; History: TVectArtEditHistory;
   State: TVectArtEditorState);
 function IsMapTree(Layer: TVectArtLayer): Boolean;
@@ -13,7 +14,7 @@ type
   TInsertMap = class(TVectArtEditCommand)
   private
     FDocument: TVectArtDocument;
-    FGroup: TMapRakuGroupLayer;
+    FPath: TVectArtPathLayer;
     FIndex: Integer;
     FApplied: Boolean;
   public
@@ -32,6 +33,12 @@ type
     constructor Create(Document: TVectArtDocument; Parent: TMapRakuGroupLayer; Child: TVectArtLayer);
     procedure Execute; override;
     procedure Undo; override;
+  end;
+  TInsertBoundary=class(TVectArtEditCommand)
+  private FDocument:TVectArtDocument; FLayer:TMapRakuLevelBoundaryLayer;
+    FIndex:Integer; FApplied:Boolean;
+  public constructor Create(Document:TVectArtDocument; Index:Integer);
+    destructor Destroy; override; procedure Execute; override; procedure Undo; override;
   end;
   TAppendMap = class(TVectArtEditCommand)
   private
@@ -62,18 +69,16 @@ constructor TInsertMap.Create(Document: TVectArtDocument; const Data: TVectArtPa
 begin
   inherited Create;
   FDocument := Document; FIndex := Document.LayerCount;
-  FGroup := TMapRakuGroupLayer.Create(Data.MapElement + ' — 層');
-  FGroup.MapSurface := True;
-  FGroup.AddChild(NewMapPath(Data));
+  FPath := NewMapPath(Data);
 end;
 destructor TInsertMap.Destroy;
 begin
-  if not FApplied then FGroup.Free;
+  if not FApplied then FPath.Free;
   inherited;
 end;
 procedure TInsertMap.Execute;
 begin
-  FDocument.InsertLayer(FIndex, FGroup); FApplied := True;
+  FDocument.InsertLayer(FIndex, FPath); FApplied := True;
   FDocument.SetSelectedLayers([FIndex]);
 end;
 procedure TInsertMap.Undo;
@@ -82,24 +87,33 @@ begin
 end;
 procedure InsertMapPath(Document: TVectArtDocument; History: TVectArtEditHistory;
   const Data: TVectArtPathData);
-var C: TVectArtEditCommand; G:TMapRakuGroupLayer; I, Selected:Integer; SameKind:Boolean;
+var C: TVectArtEditCommand;
 begin
-  G:=nil; Selected:=-1;
-  if (Document<>nil) and (Document.SelectionCount=1) then begin
-    Selected:=Document.SelectedIndex;
-    if (Selected>0) and (Document[Selected] is TMapRakuGroupLayer) then begin
-      G:=TMapRakuGroupLayer(Document[Selected]); SameKind:=G.MapSurface and (G.ChildCount>0);
-      if SameKind then for I:=0 to G.ChildCount-1 do
-        SameKind:=SameKind and (G[I] is TVectArtPathLayer) and
-          (TVectArtPathLayer(G[I]).MapElement=Data.MapElement);
-      if not SameKind then G:=nil;
-    end;
-  end;
-  if G<>nil then C:=TAppendMap.Create(Document,G,Selected,Data)
-  else C:=TInsertMap.Create(Document,Data);
+  C:=TInsertMap.Create(Document,Data);
   C.Execute;
   if History <> nil then History.AddApplied(C) else C.Free;
 end;
+
+procedure InsertMapLevelBoundary(Document:TVectArtDocument; History:TVectArtEditHistory);
+var Index:Integer; C:TInsertBoundary;
+begin
+  if Document=nil then Exit;
+  Index:=Document.LayerCount;
+  if Document.SelectionCount>0 then Index:=Document.SelectedIndex+1;
+  C:=TInsertBoundary.Create(Document,Index); C.Execute;
+  if History<>nil then History.AddApplied(C) else C.Free;
+end;
+
+constructor TInsertBoundary.Create(Document:TVectArtDocument; Index:Integer);
+begin inherited Create; FDocument:=Document; FIndex:=Index;
+  FLayer:=TMapRakuLevelBoundaryLayer.Create; end;
+destructor TInsertBoundary.Destroy;
+begin if not FApplied then FLayer.Free; inherited; end;
+procedure TInsertBoundary.Execute;
+begin FDocument.InsertLayer(FIndex,FLayer); FApplied:=True;
+  FDocument.SetSelectedLayers([FIndex]); end;
+procedure TInsertBoundary.Undo;
+begin FDocument.ExtractLayer(FIndex); FApplied:=False; end;
 
 constructor TAppendMap.Create(Document:TVectArtDocument; Parent:TMapRakuGroupLayer;
   ParentIndex:Integer; const Data:TVectArtPathData);

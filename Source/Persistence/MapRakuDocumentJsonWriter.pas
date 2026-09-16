@@ -277,6 +277,19 @@ begin
     for I := 1 to Document.LayerCount - 1 do
     begin
       Layer := Document.Layers[I];
+      if Layer is TMapRakuLevelBoundaryLayer then
+      begin
+        GroupJson := TJSONObject.Create;
+        GroupJson.AddPair('type', 'mapLevelBoundary');
+        GroupJson.AddPair('name', Layer.Name);
+        GroupJson.AddPair('visible', TJSONBool.Create(Layer.Visible));
+        GroupJson.AddPair('locked', TJSONBool.Create(Layer.Locked));
+        AddLayerFilters(Layer, GroupJson);
+        LayersJson.AddElement(GroupJson);
+        if I = Document.SelectedIndex then
+          SerializedSelectedIndex := LayersJson.Count;
+        Continue;
+      end;
       if Layer is TMapRakuGroupLayer then
       begin
         Group := TMapRakuGroupLayer(Layer);

@@ -10,6 +10,9 @@ uses
   VerticalScrollBarControl;
 
 type
+  TMapRakuLayerContextMenuEvent = procedure(Sender: TObject;
+    const ScreenPoint: TPoint) of object;
+
   TMapRakuLayerDropMode = (sldmNone, sldmReorder, sldmIntoGroup);
 
   TVectArtLayerListControl = class(TCustomControl)
@@ -37,6 +40,7 @@ type
     FSelection            : TMapRakuLayerSelection; // クリック選択と範囲アンカーを所有する。
     FScrollBar            : TVerticalScrollBarControl;   // 文書の積層順に対応する縦スクロールUI。
     FUpdatingScrollBar    : Boolean;                     // 表示更新によるスクロール通知の再入を抑止する。
+    FOnObjectContextMenu  : TMapRakuLayerContextMenuEvent;
     function DragSourcesEditable: Boolean;
     function IsDragSourceLayer(Layer: TVectArtLayer): Boolean;
     function LayerBounds: TRect;
@@ -70,6 +74,8 @@ type
     property Document: TVectArtDocument read FDocument write SetDocument;
     property EditHistory: TVectArtEditHistory read FEditHistory write FEditHistory;
     property EditorState: TVectArtEditorState read FEditorState write FEditorState;
+    property OnObjectContextMenu: TMapRakuLayerContextMenuEvent
+      read FOnObjectContextMenu write FOnObjectContextMenu;
   end;
 
 implementation
@@ -273,6 +279,24 @@ var
   Parent: TMapRakuGroupLayer;
   SourceIndex: Integer;
 begin
+  if (Button = mbRight) and (FDocument <> nil) then
+  begin
+    SyncRendererContext;
+    Index := FRenderer.LayerIndexAt(LayerBounds, Y);
+    if Index > 0 then
+    begin
+      Layer := FRenderer.LayerAt(Index);
+      Parent := FRenderer.LayerParentAt(Index);
+      SourceIndex := FRenderer.LayerSourceIndexAt(Index);
+      FSelection.SelectLayer(FDocument, FEditorState, Parent, Layer,
+        SourceIndex, []);
+      FSelection.CompleteClick(Layer, SourceIndex);
+      Invalidate;
+    end;
+    if Assigned(FOnObjectContextMenu) then
+      FOnObjectContextMenu(Self, ClientToScreen(Point(X, Y)));
+    Exit;
+  end;
   if (Button = mbLeft) and (FDocument <> nil) then
   begin
     ResetDragState;

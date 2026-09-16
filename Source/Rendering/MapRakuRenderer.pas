@@ -136,15 +136,82 @@ procedure RenderVectArtLayers(const RenderLayers: TArray<TVectArtLayer>;
   OpacityMultiplier: Single; InputTextLayer: TMapRakuTextLayer;
   InputTextOutlineColor: TColor; MapPass: Integer = 0; const OutputCanvas: ISkCanvas = nil); forward;
 
+procedure RenderVectArtLevelRanges(Document: TVectArtDocument;
+  Target: TVectArtRenderBuffer; Width, Height, FirstLayerIndex,
+  LastLayerIndex: Integer; const LogicalBounds: TRectF;
+  MinimumStrokeWidth: Single; InputTextLayer: TMapRakuTextLayer;
+  InputTextOutlineColor: TColor);
+var
+  Batch: TList<TVectArtLayer>;
+  HasMapPath: Boolean;
+  I: Integer;
+  LayerBuffer: TVectArtRenderBuffer;
+  procedure FlushBatch;
+  begin
+    if Batch.Count = 0 then Exit;
+    if HasMapPath then
+    begin
+      RenderVectArtLayers(Batch.ToArray, LayerBuffer, Width, Height,
+        LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
+        InputTextOutlineColor, 1);
+      CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
+      RenderVectArtLayers(Batch.ToArray, LayerBuffer, Width, Height,
+        LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
+        InputTextOutlineColor, 2);
+      CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
+    end
+    else
+    begin
+      RenderVectArtLayers(Batch.ToArray, LayerBuffer, Width, Height,
+        LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
+        InputTextOutlineColor);
+      CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
+    end;
+    Batch.Clear;
+    HasMapPath := False;
+  end;
+begin
+  Target.SetSize(Width, Height);
+  Target.Clear;
+  Batch := TList<TVectArtLayer>.Create;
+  HasMapPath := False;
+  LayerBuffer := TVectArtRenderBuffer.Create;
+  try
+    for I := FirstLayerIndex to LastLayerIndex do
+    begin
+      if Document[I] is TMapRakuLevelBoundaryLayer then
+      begin
+        FlushBatch;
+        Continue;
+      end;
+      if not Document[I].Visible then Continue;
+      if Document[I] is TMapRakuGroupLayer then
+      begin
+        FlushBatch;
+        RenderVectArtLayerTree(Document[I], LayerBuffer, Width, Height,
+          LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
+          InputTextOutlineColor);
+        CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
+      end
+      else
+      begin
+        Batch.Add(Document[I]);
+        HasMapPath := HasMapPath or ((Document[I] is TVectArtPathLayer) and
+          (TVectArtPathLayer(Document[I]).MapElement <> ''));
+      end;
+    end;
+    FlushBatch;
+  finally
+    LayerBuffer.Free;
+    Batch.Free;
+  end;
+end;
+
 procedure RenderVectArtDocumentRange(Document: TVectArtDocument;
   Target: TVectArtRenderBuffer; Width, Height, FirstLayerIndex,
   LastLayerIndex: Integer; MinimumStrokeWidth: Single);
 var
   CanvasLayer: TVectArtCanvasLayer;
-  FlatLayers: TList<TVectArtLayer>;
-  HasVisibleGroup: Boolean;
-  I: Integer;
-  LayerBuffer: TVectArtRenderBuffer;
   LogicalBounds: TRectF;
   PatternScope: IInterface;
 begin
@@ -168,37 +235,9 @@ begin
   PatternScope := BeginMapRakuPatternRender(Max(
     Width / Max(LogicalBounds.Width, 1),
     Height / Max(LogicalBounds.Height, 1)));
-  HasVisibleGroup := False;
-  FlatLayers := TList<TVectArtLayer>.Create;
-  try
-    for I := FirstLayerIndex to LastLayerIndex do
-      if Document[I].Visible then
-      begin
-        FlatLayers.Add(Document[I]);
-        HasVisibleGroup := HasVisibleGroup or
-          (Document[I] is TMapRakuGroupLayer);
-      end;
-    if not HasVisibleGroup then
-    begin
-      RenderVectArtLayers(FlatLayers.ToArray, Target, Width, Height,
-        LogicalBounds, MinimumStrokeWidth, 1.0, nil, clNone);
-      Exit;
-    end;
-  finally
-    FlatLayers.Free;
-  end;
-  LayerBuffer := TVectArtRenderBuffer.Create;
-  try
-    for I := FirstLayerIndex to LastLayerIndex do
-      if Document[I].Visible then
-      begin
-        RenderVectArtLayerTree(Document[I], LayerBuffer, Width, Height,
-          LogicalBounds, MinimumStrokeWidth, 1.0, nil, clNone);
-        CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
-      end;
-  finally
-    LayerBuffer.Free;
-  end;
+  RenderVectArtLevelRanges(Document, Target, Width, Height,
+    FirstLayerIndex, LastLayerIndex, LogicalBounds, MinimumStrokeWidth,
+    nil, clNone);
 end;
 
 procedure InflateMapRakuBounds(var Bounds: TRectF; X, Y: Single);
@@ -579,11 +618,7 @@ procedure RenderVectArtDocument(Document: TVectArtDocument;
   InputTextOutlineColor: TColor);
 var
   CanvasLayer: TVectArtCanvasLayer;
-  FlatLayers: TList<TVectArtLayer>;
-  HasVisibleGroup: Boolean;
-  I: Integer;
   LogicalBounds: TRectF;
-  LayerBuffer: TVectArtRenderBuffer;
   PatternScope: IInterface; // この文書描画だけでタイルを共有し、終了時に全画像を解放する。
 begin
   if Document = nil then
@@ -596,46 +631,11 @@ begin
     CanvasLayer.Height * 0.5);
   if Target = nil then
     raise EArgumentNilException.Create('Target');
-  HasVisibleGroup := False;
   PatternScope := BeginMapRakuPatternRender(Max(Width / Max(LogicalBounds.Width, 1),
     Height / Max(LogicalBounds.Height, 1)));
-  FlatLayers := TList<TVectArtLayer>.Create;
-  try
-    for I := 1 to Document.LayerCount - 1 do
-      if Document[I].Visible then
-      begin
-        FlatLayers.Add(Document[I]);
-        HasVisibleGroup := HasVisibleGroup or
-          (Document[I] is TMapRakuGroupLayer);
-      end;
-    // The common, non-group case can render directly into the destination.
-    // This avoids a full-canvas temporary buffer and source-over pass on
-    // every mouse movement.
-    if not HasVisibleGroup then
-    begin
-      RenderVectArtLayers(FlatLayers.ToArray, Target, Width, Height,
-        LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
-        InputTextOutlineColor);
-      Exit;
-    end;
-  finally
-    FlatLayers.Free;
-  end;
-  Target.SetSize(Width, Height);
-  Target.Clear;
-  LayerBuffer := TVectArtRenderBuffer.Create;
-  try
-    for I := 1 to Document.LayerCount - 1 do
-      if Document[I].Visible then
-      begin
-        RenderVectArtLayerTree(Document[I], LayerBuffer, Width, Height,
-          LogicalBounds, MinimumStrokeWidth, 1.0, InputTextLayer,
-          InputTextOutlineColor);
-        CompositeVectArtRgba(LayerBuffer, Target.Data, Width, Height);
-      end;
-  finally
-    LayerBuffer.Free;
-  end;
+  RenderVectArtLevelRanges(Document, Target, Width, Height, 1,
+    Document.LayerCount - 1, LogicalBounds, MinimumStrokeWidth,
+    InputTextLayer, InputTextOutlineColor);
 end;
 
 function FitMapRakuThumbnailBounds(const ContentBounds: TRectF;

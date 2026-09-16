@@ -276,6 +276,9 @@ begin
     IsMapTree(FEditorState.OpenGroupChild);
   GroupBuilder.AddItem('選択要素を層から外す', GroupObjectClick,
     DetachEnabled).Tag := 4;
+  FBuilder.AddSeparator;
+  FBuilder.AddItem('高さの区切りを追加', GroupObjectClick,
+    FDocument <> nil).Tag := 5;
   if (Length(FHitLayerIndices) > 1) and
     ((FEditorState = nil) or (FEditorState.OpenGroup = nil)) then
   begin
@@ -308,6 +311,8 @@ begin
       UngroupCurrentSelection(FDocument, FEditHistory, FEditorState);
     4:
       DetachMapChild(FDocument, FEditHistory, FEditorState);
+    5:
+      InsertMapLevelBoundary(FDocument, FEditHistory);
   end;
   Close;
 end;

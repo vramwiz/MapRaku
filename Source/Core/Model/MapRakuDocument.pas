@@ -28,7 +28,7 @@ type
   TVectArtLayerKind = (vlkCanvas, vlkRectangle, vlkRoundedRectangle,
     vlkPath, vlkImage, vlkShape, vlkEllipse, vlkArc, vlkRectangleLine,
     vlkRoundedRectangleLine, vlkEllipseLine, vlkEllipseArcShape, vlkText,
-    vlkTextPath, vlkGroup);
+    vlkTextPath, vlkGroup, vlkMapLevelBoundary);
   TVectArtImageSourceKind = (visImage, visLogo);
   TVectArtImagePoints = array[0..3] of TPointF;
   // WebArt Designerの線種コンボとMIF vector stroke style 0..8を同順で保持する。
@@ -131,6 +131,12 @@ type
     property MapSurface: Boolean read FMapSurface write FMapSurface;
     property ChildCount: Integer read GetChildCount;
     property Children[Index: Integer]: TVectArtLayer read GetChild; default;
+  end;
+
+  // 描画せず、レイヤーリスト上で同じ高さの区間を分割する境界。
+  TMapRakuLevelBoundaryLayer = class(TVectArtLayer)
+  public
+    constructor Create(const AName:string='高さの区切り');
   end;
 
   TVectArtCanvasLayer = class(TVectArtLayer)
@@ -774,6 +780,12 @@ uses
   System.Math, MapRakuEllipseGeometry, MapRakuGeometry;
 
 { TMapRakuGroupLayer }
+
+constructor TMapRakuLevelBoundaryLayer.Create(const AName:string);
+begin
+  inherited Create(vlkMapLevelBoundary,AName);
+  Locked:=False; Visible:=True;
+end;
 
 procedure TMapRakuGroupLayer.AddChild(Layer: TVectArtLayer);
 begin

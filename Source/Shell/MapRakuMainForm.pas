@@ -306,6 +306,8 @@ begin
   FDockManager.RegisterTool(FToolPaletteFrame, vdsLeft);
   FDockManager.RegisterTool(FObjectPropertiesFrame, vdsRight);
   FLayerFrame.Context := FDesignerContext;
+  FLayerFrame.LayerList.OnObjectContextMenu :=
+    FObjectContextMenu.ShowForObject;
   FToolPaletteFrame.Context := FDesignerContext;
   FObjectPropertiesFrame.Context := FDesignerContext;
   FDockManager.OnToolVisibilityChanged := ToolVisibilityChanged;
