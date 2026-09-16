@@ -3,6 +3,7 @@ unit MapRakuTheme;
 interface
 uses MapRakuDocument, MapRakuEditHistory;
 procedure ApplyMapTheme(Document: TVectArtDocument; History: TVectArtEditHistory; Dark: Boolean);
+procedure NormalizeMapRailTheme(Document:TVectArtDocument; Dark:Boolean);
 implementation
 uses System.Generics.Collections, Vcl.Graphics, MapRakuEditCommands;
 type
@@ -71,5 +72,27 @@ var C: TThemeCommand;
 begin
   C := TThemeCommand.Create(Document, Dark); C.Execute;
   if History <> nil then History.AddApplied(C) else C.Free;
+end;
+
+procedure NormalizeMapRailTheme(Document:TVectArtDocument; Dark:Boolean);
+  procedure Normalize(L:TVectArtLayer);
+  var I:Integer;
+  begin
+    if L is TMapRakuGroupLayer then
+    begin
+      for I:=0 to TMapRakuGroupLayer(L).ChildCount-1 do
+        Normalize(TMapRakuGroupLayer(L)[I]);
+      Exit;
+    end;
+    if (L is TVectArtPathLayer) and
+      ((TVectArtPathLayer(L).MapElement='jr') or
+       (TVectArtPathLayer(L).MapElement='rail')) then
+      if Dark then TVectArtPathLayer(L).StrokeColor:=clWhite
+      else TVectArtPathLayer(L).StrokeColor:=clBlack;
+  end;
+var I:Integer;
+begin
+  if Document=nil then Exit;
+  for I:=1 to Document.LayerCount-1 do Normalize(Document[I]);
 end;
 end.

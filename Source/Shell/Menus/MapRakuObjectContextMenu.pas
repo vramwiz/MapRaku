@@ -60,6 +60,8 @@ type
     FMenu: TVectArtDarkPopupMenu;
     procedure EditObjectClick(Sender: TObject);
     procedure GroupObjectClick(Sender: TObject);
+    procedure CrossingObjectClick(Sender: TObject);
+    procedure StairObjectClick(Sender: TObject);
     function CaptureContext: TMapRakuObjectMenuContext;
     procedure Rebuild(const Context: TMapRakuObjectMenuContext);
     procedure SelectHitLayer(Sender: TObject);
@@ -231,6 +233,9 @@ var
   Panel: TPanel;
   Operations: TVectArtLayerOperations;
   DetachEnabled: Boolean;
+  CrossingBuilder: TMapRakuObjectMenuBuilder;
+  CrossingEnabled: Boolean;
+  StairBuilder:TMapRakuObjectMenuBuilder;
 begin
   FreeAndNil(FBuilder);
   FBuilder := TMapRakuObjectMenuBuilder.Create(FMenu, FHost);
@@ -279,6 +284,46 @@ begin
   FBuilder.AddSeparator;
   FBuilder.AddItem('高さの区切りを追加', GroupObjectClick,
     FDocument <> nil).Tag := 5;
+  CrossingEnabled := (Context.SelectionCount=2) and
+    (Context.Layers[0] is TVectArtPathLayer) and
+    (Context.Layers[1] is TVectArtPathLayer) and
+    (TVectArtPathLayer(Context.Layers[0]).MapElement<>'') and
+    (TVectArtPathLayer(Context.Layers[1]).MapElement<>'');
+  CrossingBuilder := FBuilder.AddSubMenu('交差部分');
+  CrossingBuilder.AddItem('通常交差', CrossingObjectClick,
+    CrossingEnabled).Tag:=20;
+  CrossingBuilder.AddItem('踏切', CrossingObjectClick,
+    CrossingEnabled).Tag:=21;
+  CrossingBuilder.AddItem('高架', CrossingObjectClick,
+    CrossingEnabled).Tag:=22;
+  CrossingBuilder.AddItem('橋', CrossingObjectClick,
+    CrossingEnabled).Tag:=23;
+  CrossingBuilder.AddItem('跨線橋', CrossingObjectClick,
+    CrossingEnabled).Tag:=24;
+  CrossingBuilder.AddItem('表現なし', CrossingObjectClick,
+    CrossingEnabled).Tag:=25;
+  CrossingBuilder.AddSeparator;
+  CrossingBuilder.AddItem('選択1を上にする', CrossingObjectClick,
+    CrossingEnabled).Tag:=26;
+  CrossingBuilder.AddItem('選択2を上にする', CrossingObjectClick,
+    CrossingEnabled).Tag:=27;
+  CrossingBuilder.AddSeparator;
+  CrossingBuilder.AddItem('表現範囲：短い', CrossingObjectClick,
+    CrossingEnabled).Tag:=28;
+  CrossingBuilder.AddItem('表現範囲：標準', CrossingObjectClick,
+    CrossingEnabled).Tag:=29;
+  CrossingBuilder.AddItem('表現範囲：長い', CrossingObjectClick,
+    CrossingEnabled).Tag:=30;
+  if (Context.SelectionCount=1) and
+    (Context.SingleLayer is TVectArtPathLayer) and
+    (TVectArtPathLayer(Context.SingleLayer).MapElement.StartsWith('stairs-')) then
+  begin
+    StairBuilder:=FBuilder.AddSubMenu('階段の段数');
+    StairBuilder.AddItem('自動',StairObjectClick).Tag:=40;
+    StairBuilder.AddItem('6段',StairObjectClick).Tag:=41;
+    StairBuilder.AddItem('10段',StairObjectClick).Tag:=42;
+    StairBuilder.AddItem('16段',StairObjectClick).Tag:=43;
+  end;
   if (Length(FHitLayerIndices) > 1) and
     ((FEditorState = nil) or (FEditorState.OpenGroup = nil)) then
   begin
@@ -299,6 +344,56 @@ begin
       FBuilder.AddSeparator;
       Contributor.BuildMenu(Context, FBuilder);
     end;
+end;
+
+procedure TMapRakuObjectContextMenu.StairObjectClick(Sender:TObject);
+var Context:TMapRakuObjectMenuContext; Steps:Integer;
+begin
+  if not (Sender is TPanel) then Exit;
+  Context:=CaptureContext;
+  if not (Context.SingleLayer is TVectArtPathLayer) then Exit;
+  case TPanel(Sender).Tag of 40:Steps:=0; 41:Steps:=6; 42:Steps:=10;
+    43:Steps:=16; else Exit; end;
+  SetMapStairStepCount(FDocument,FEditHistory,
+    TVectArtPathLayer(Context.SingleLayer),Steps);
+  Close;
+end;
+
+procedure TMapRakuObjectContextMenu.CrossingObjectClick(Sender: TObject);
+var Context:TMapRakuObjectMenuContext; Kind:TMapRakuCrossingKind;
+  Relation:TMapRakuCrossingRelation; UpperId:string;
+  RangeMargin:Single;
+begin
+  if not (Sender is TPanel) then Exit;
+  Context:=CaptureContext;
+  if (Context.SelectionCount<>2) or
+    not (Context.Layers[0] is TVectArtPathLayer) or
+    not (Context.Layers[1] is TVectArtPathLayer) then Exit;
+  Relation:=FDocument.FindCrossingRelation(Context.Layers[0].PersistentId,
+    Context.Layers[1].PersistentId);
+  if Relation<>nil then
+  begin Kind:=Relation.Kind; UpperId:=Relation.UpperObjectId;
+    RangeMargin:=Relation.RangeMargin; end
+  else begin Kind:=mckOverpass; UpperId:=Context.Layers[1].PersistentId;
+    RangeMargin:=12; end;
+  case TPanel(Sender).Tag of
+    20: Kind:=mckNormal;
+    21: Kind:=mckRailroadCrossing;
+    22: Kind:=mckOverpass;
+    23: Kind:=mckBridge;
+    24: Kind:=mckRailOverpass;
+    25: Kind:=mckNone;
+    26: UpperId:=Context.Layers[0].PersistentId;
+    27: UpperId:=Context.Layers[1].PersistentId;
+    28: RangeMargin:=6;
+    29: RangeMargin:=12;
+    30: RangeMargin:=24;
+  else Exit;
+  end;
+  SetMapCrossingRelation(FDocument,FEditHistory,
+    Context.Layers[0].PersistentId,Context.Layers[1].PersistentId,Kind,
+    UpperId,RangeMargin);
+  Close;
 end;
 
 procedure TMapRakuObjectContextMenu.GroupObjectClick(Sender: TObject);

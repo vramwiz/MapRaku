@@ -66,6 +66,13 @@ begin
       Canvas.RoundRect(14,10,58,42,14,14); end;
     26,27: begin Canvas.Brush.Style:=bsSolid; Canvas.Brush.Color:=$00E8A050;
       Canvas.Polygon([Point(10,34),Point(22,12),Point(45,9),Point(63,29),Point(42,42)]); end;
+    200..202: begin
+      Canvas.Brush.Style:=bsSolid; Canvas.Brush.Color:=clWhite;
+      Canvas.Pen.Color:=clBlack; Canvas.Rectangle(12,10,60,40);
+      for Y:=14 to 38 do if ((Y-14) mod 5)=0 then begin
+        Canvas.MoveTo(14+(Y-14) div 3,Y); Canvas.LineTo(58-(Y-14) div 3,Y);
+      end;
+    end;
   else
     Canvas.Brush.Style:=bsSolid; Canvas.Brush.Color:=clWhite; Canvas.Pen.Color:=clBlack;
     Canvas.Ellipse(23,10,49,36); Canvas.Font.Color:=clBlack;
@@ -88,7 +95,8 @@ begin
   FCategory.OnDrawItem:=CategoryDrawItem;
   FCategory.Items.Add(U([$9053,$8DEF]));
   FCategory.Items.Add(U([$7DDA,$8DEF])); FCategory.Items.Add(U([$6C34,$7CFB]));
-  FCategory.Items.Add(U([$8A18,$53F7])); FCategory.ItemIndex:=0; FCategory.OnChange:=CategoryChange;
+  FCategory.Items.Add(U([$8A18,$53F7])); FCategory.Items.Add(U([$6B69,$9053]));
+  FCategory.ItemIndex:=0; FCategory.OnChange:=CategoryChange;
   FGallery:=TScrollBox.Create(Self); FGallery.Parent:=Self; FGallery.SetBounds(6,48,162,ClientHeight-54);
   FGallery.Anchors:=[akLeft,akTop,akRight,akBottom]; FGallery.BorderStyle:=bsNone;
   FGallery.Color:=Color; FGallery.HorzScrollBar.Visible:=False; FillPresets;
@@ -113,6 +121,9 @@ begin
     3: begin AddPreset(100,U([$99C5])); AddPreset(101,U([$4FE1,$53F7])); AddPreset(102,U([$6A2A,$65AD,$6B69,$9053]));
       AddPreset(103,U([$6B69,$9053,$6A4B])); AddPreset(104,U([$756A,$53F7])); AddPreset(105,U([$99D0,$8ECA,$5834]));
       AddPreset(106,U([$65B9,$4F4D])); AddPreset(107,U([$9053,$8DEF,$756A,$53F7])); AddPreset(109,U([$77E2,$5370])); end;
+    4: begin AddPreset(200,U([$968E,$6BB5])+' '+U([$4E0A,$308A]));
+      AddPreset(201,U([$968E,$6BB5])+' '+U([$4E0B,$308A]));
+      AddPreset(202,U([$6B69,$9053,$6A4B])); end;
   end;
 end;
 
@@ -153,6 +164,12 @@ procedure TMapToolsPanel.PresetClick(Sender:TObject);
 var P:Integer; Kind:string; Base:Integer;
 begin
   P:=TControl(Sender).Tag;
+  if P in [200..202] then begin
+    if P=200 then Kind:='stairs-up' else if P=201 then Kind:='stairs-down'
+    else Kind:='pedestrian-bridge';
+    FState.LineStrokeWidth:=18;
+    ActivateLine(Kind,vetLine,slvkSharp,clBlack); Exit;
+  end;
   if P>=100 then begin ActivateSymbol(P-100); Exit; end;
   if P in [0..2] then begin
     if P=0 then ActivateLine('road',vetLine,slvkSharp,$00E4E4E4)

@@ -5,7 +5,8 @@ uses System.Skia, MapRakuDocument;
 function DrawMapPath(const Canvas: ISkCanvas; const Path: ISkPath;
   Layer: TVectArtPathLayer; Opacity: Single; Pass: Integer): Boolean;
 implementation
-uses MapRakuRoadRenderer, MapRakuRailRenderer, MapRakuRiverRenderer;
+uses MapRakuRoadRenderer, MapRakuRailRenderer, MapRakuRiverRenderer,
+  MapRakuStairRenderer;
 function DrawMapPath(const Canvas: ISkCanvas; const Path: ISkPath;
   Layer: TVectArtPathLayer; Opacity: Single; Pass: Integer): Boolean;
 begin
@@ -15,6 +16,10 @@ begin
     if (Layer.MapElement = 'jr') or (Layer.MapElement = 'rail') then
       DrawMapRail(Canvas, Path, Layer, Opacity)
     else if Layer.MapElement = 'river' then DrawMapRiver(Canvas, Path, Layer, Opacity);
+    if (Layer.MapElement='stairs-up') or (Layer.MapElement='stairs-down') then
+      DrawMapStairs(Canvas,Path,Layer,Opacity);
+    if Layer.MapElement='pedestrian-bridge' then
+      DrawPedestrianBridge(Canvas,Path,Layer,Opacity);
   end;
 end;
 end.

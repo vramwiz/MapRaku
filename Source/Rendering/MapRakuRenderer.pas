@@ -62,6 +62,9 @@ procedure CompositeVectArtRgbaOffset(const Source: TVectArtRenderBuffer;
 // SVGと画面で共通の描画処理を使用する。Canvasは呼び出し元が所有する。
 procedure RenderMapLayersToCanvas(const Layers: TArray<TVectArtLayer>;
   const Canvas: ISkCanvas; Width, Height: Integer; Opacity: Single; MapPass: Integer = 0);
+// 交差関係の踏切・橋・高架表現を、文書と同じ中心原点でCanvasへベクター描画する。
+procedure RenderMapRakuCrossingExpressionsToCanvas(Document: TVectArtDocument;
+  const Canvas: ISkCanvas);
 implementation
 
 uses
@@ -70,8 +73,8 @@ uses
   MapRakuEllipseGeometry, MapRakuGeometry,
   MapRakuFilters, MapRakuLayerGeometry, MapRakuPathOperations,
   MapRakuPaintRenderer, MapRakuPatternRenderer,
-  MapRakuPathRenderer, MapRakuShapePath, MapRakuTextGeometry,
-  MapRakuTextPathGeometry, MapRakuVariableWidthRenderer;
+  MapRakuPathRenderer, MapRakuRailRenderer, MapRakuShapePath, MapRakuTextGeometry,
+  MapRakuTextPathGeometry, MapRakuVariableWidthRenderer, MapRakuCrossings;
 
 const
   MAX_RENDER_DIMENSION = 16384;
@@ -611,6 +614,222 @@ begin
       Round(Target.Pixels[I].A * Opacity), 0, 255);
 end;
 
+procedure RenderMapRakuCrossingExpressions(Document: TVectArtDocument;
+  Target: TVectArtRenderBuffer; Width, Height: Integer;
+  const LogicalBounds: TRectF; const OutputCanvas: ISkCanvas = nil);
+var
+  Canvas: ISkCanvas;
+  Crossings: TArray<TMapRakuCrossing>;
+  Groups: TArray<TMapRakuCrossingGroup>;
+  C: TMapRakuCrossing;
+  G: TMapRakuCrossingGroup;
+  ImageInfo: TSkImageInfo;
+  Paint: ISkPaint;
+  Surface: ISkSurface;
+  ScaleX,ScaleY:Single;
+  P1,P2,N,T:TPointF;
+  I:Integer;
+  Relation:TMapRakuCrossingRelation;
+  HalfLength:Single;
+  UpperPath:TVectArtPathLayer;
+  function Add(const P,V:TPointF; Amount:Single):TPointF;
+  begin Result:=TPointF.Create(P.X+V.X*Amount,P.Y+V.Y*Amount); end;
+  procedure Line(const A,B:TPointF; Color:TAlphaColor; Stroke:Single);
+  begin
+    Paint.Color:=Color; Paint.StrokeWidth:=Stroke;
+    Paint.Style:=TSkPaintStyle.Stroke; Canvas.DrawLine(A,B,Paint);
+  end;
+  function FindPathById(L:TVectArtLayer; const Id:string):TVectArtPathLayer;
+  var K:Integer;
+  begin
+    if (L is TVectArtPathLayer) and (L.PersistentId=Id) then
+      Exit(TVectArtPathLayer(L));
+    if L is TMapRakuGroupLayer then
+      for K:=0 to TMapRakuGroupLayer(L).ChildCount-1 do
+      begin
+        Result:=FindPathById(TMapRakuGroupLayer(L)[K],Id);
+        if Result<>nil then Exit;
+      end;
+    Result:=nil;
+  end;
+  function DocumentPathById(const Id:string):TVectArtPathLayer;
+  var K:Integer;
+  begin
+    Result:=nil;
+    for K:=1 to Document.LayerCount-1 do
+    begin
+      Result:=FindPathById(Document[K],Id);
+      if Result<>nil then Exit;
+    end;
+  end;
+  function GroupHasExplicitRelation(const Group:TMapRakuCrossingGroup):Boolean;
+  var K:Integer;
+  begin
+    Result:=False;
+    for K:=0 to High(Group.TargetIds) do
+      if Document.FindCrossingRelation(Group.SubjectId,
+        Group.TargetIds[K])<>nil then Exit(True);
+  end;
+  procedure DrawBridgeMarks(const Center,Direction:TPointF; HalfLength:Single;
+    Deck:TVectArtPathLayer);
+  var A,B,Perp:TPointF; DeckWidth,Offset:Single;
+  begin
+    DeckWidth:=16;
+    if Deck<>nil then DeckWidth:=Max(Deck.StrokeWidth,4);
+    Perp:=TPointF.Create(-Direction.Y,Direction.X);
+    Offset:=DeckWidth*0.5+4;
+    A:=Add(Center,Direction,-HalfLength);
+    B:=Add(Center,Direction,HalfLength);
+    Paint.StrokeCap:=TSkStrokeCap.Butt;
+    Line(Add(A,Perp,-Offset),Add(B,Perp,-Offset),TAlphaColorRec.Black,2);
+    Line(Add(A,Perp,Offset),Add(B,Perp,Offset),TAlphaColorRec.Black,2);
+    Paint.StrokeCap:=TSkStrokeCap.Square;
+  end;
+  procedure DrawDeck(const Center,Direction:TPointF; HalfLength:Single;
+    Deck:TVectArtPathLayer);
+  var A,B:TPointF; DeckWidth:Single; RGB:TColor;
+    BodyColor,EdgeColor:TAlphaColor; Builder:ISkPathBuilder; DeckPath:ISkPath;
+  begin
+    A:=Add(Center,Direction,-HalfLength); B:=Add(Center,Direction,HalfLength);
+    DeckWidth:=16;
+    if Deck<>nil then DeckWidth:=Max(Deck.StrokeWidth,4);
+    if (Deck<>nil) and (Deck.MapElement='road') then
+    begin
+      RGB:=ColorToRGB(Deck.StrokeColor);
+      BodyColor:=$FF000000 or (Cardinal(RGB and $FF) shl 16) or
+        Cardinal(RGB and $FF00) or (Cardinal(RGB shr 16) and $FF);
+      if ((RGB and $FF)+((RGB shr 8) and $FF)+((RGB shr 16) and $FF))>384 then
+        EdgeColor:=$FF555555 else EdgeColor:=$FFD0D0D0;
+      // 交差区間の端は道路端点ではない。幅の異なるSquare capが括弧状に
+      // はみ出さないよう、縁と本体を同じButt端で揃える。
+      Paint.StrokeCap:=TSkStrokeCap.Butt;
+      Line(A,B,EdgeColor,DeckWidth+2);
+      Line(A,B,BodyColor,DeckWidth);
+      Paint.StrokeCap:=TSkStrokeCap.Square;
+    end else if (Deck<>nil) and
+      ((Deck.MapElement='jr') or (Deck.MapElement='rail')) then
+    begin
+      // 明示的に線路を上側へ置く場合は、橋区間の線路本体も不透明に
+      // 描き直して、後から描かれた下側道路が模様の間へ透けるのを防ぐ。
+      Builder:=TSkPathBuilder.Create;
+      Builder.MoveTo(A); Builder.LineTo(B); DeckPath:=Builder.Detach;
+      DrawMapRail(Canvas,DeckPath,Deck,1);
+    end;
+    // 橋パーツは経路本体の端ではなく、その外側に添える短い平行線。
+    DrawBridgeMarks(Center,Direction,HalfLength,Deck);
+  end;
+begin
+  if Document=nil then Exit;
+  if (OutputCanvas=nil) and ((Target=nil) or (Target.Data=nil)) then Exit;
+  Crossings:=CalculateMapRakuCrossings(Document);
+  if Length(Crossings)=0 then Exit;
+  // 複数の線路を1区間へ束ねる処理は、単独交差の橋表示へ干渉するため
+  // 一時停止する。各交差を独立して描画する。
+  Groups:=nil;
+  if OutputCanvas=nil then
+  begin
+    ImageInfo:=TSkImageInfo.Create(Width,Height,TSkColorType.RGBA8888,
+      TSkAlphaType.Unpremul);
+    Surface:=TSkSurface.MakeRasterDirect(ImageInfo,Target.Data,Target.Stride);
+    if Surface=nil then Exit;
+    Canvas:=Surface.Canvas;
+  end else Canvas:=OutputCanvas;
+  Paint:=TSkPaint.Create(TSkPaintStyle.Stroke);
+  Paint.AntiAlias:=True; Paint.StrokeCap:=TSkStrokeCap.Square;
+  ScaleX:=Width/LogicalBounds.Width; ScaleY:=Height/LogicalBounds.Height;
+  Canvas.Save;
+  try
+    if OutputCanvas=nil then
+    begin
+      Canvas.Scale(ScaleX,ScaleY);
+      Canvas.Translate(-LogicalBounds.Left,-LogicalBounds.Top);
+    end else
+      Canvas.Translate(Document.CanvasLayer.Width*0.5,
+        Document.CanvasLayer.Height*0.5);
+    for C in Crossings do
+    begin
+      if C.Kind in [mckNormal,mckNone] then Continue;
+      // 複数線路を束ねる関係は後段で1本の表現へまとめる。
+      for G in Groups do
+        if (Length(G.TargetIds)>1) and (G.SubjectId=C.ObjectAId) and
+          (G.Kind=C.Kind) then Break;
+      if (Length(Groups)>0) and (Length(G.TargetIds)>1) and
+        (G.SubjectId=C.ObjectAId) and (G.Kind=C.Kind) then Continue;
+      if C.UpperObjectId=C.ObjectBId then T:=C.TangentB else T:=C.TangentA;
+      UpperPath:=DocumentPathById(C.UpperObjectId);
+      if Hypot(T.X,T.Y)<0.5 then T:=TPointF.Create(1,0);
+      N:=TPointF.Create(-T.Y,T.X);
+      HalfLength:=20;
+      Relation:=Document.FindCrossingRelation(C.ObjectAId,C.ObjectBId);
+      if Relation<>nil then HalfLength:=Max(12,Relation.RangeMargin+8);
+      case C.Kind of
+        mckRailroadCrossing:
+          begin
+            Line(Add(C.Position,T,-15),Add(C.Position,T,15),
+              TAlphaColorRec.White,12);
+            for I:=-2 to 2 do
+            begin
+              P1:=Add(Add(C.Position,T,I*6),N,-7);
+              P2:=Add(Add(C.Position,T,I*6),N,7);
+              Line(P1,P2,TAlphaColorRec.Black,1.5);
+            end;
+          end;
+        mckBridge:
+          DrawDeck(C.Position,T,HalfLength,UpperPath);
+        mckOverpass,mckRailOverpass:
+          // 自動判定時も橋パーツは表示するが、経路本体を短い線として
+          // 描き直さない。上側経路を連続させたまま外側の平行線だけを足す。
+          if Relation<>nil then DrawDeck(C.Position,T,HalfLength,UpperPath)
+          else DrawBridgeMarks(C.Position,T,HalfLength,UpperPath);
+      end;
+    end;
+    for G in Groups do
+      if Length(G.TargetIds)>1 then
+      begin
+        T:=TPointF.Create(G.EndPosition.X-G.StartPosition.X,
+          G.EndPosition.Y-G.StartPosition.Y);
+        ScaleX:=Hypot(T.X,T.Y);
+        if ScaleX<0.5 then T:=TPointF.Create(1,0)
+        else T:=TPointF.Create(T.X/ScaleX,T.Y/ScaleX);
+        P1:=Add(G.StartPosition,T,-14); P2:=Add(G.EndPosition,T,14);
+        if G.Kind=mckRailroadCrossing then
+        begin
+          Line(P1,P2,TAlphaColorRec.White,12);
+          N:=TPointF.Create(-T.Y,T.X);
+          for I:=0 to 6 do
+          begin
+            ScaleX:=I/6;
+            P1:=TPointF.Create(G.StartPosition.X+(G.EndPosition.X-G.StartPosition.X)*ScaleX,
+              G.StartPosition.Y+(G.EndPosition.Y-G.StartPosition.Y)*ScaleX);
+            Line(Add(P1,N,-7),Add(P1,N,7),TAlphaColorRec.Black,1.5);
+          end;
+        end else begin
+          UpperPath:=DocumentPathById(G.SubjectId);
+          if GroupHasExplicitRelation(G) then
+            DrawDeck(TPointF.Create((P1.X+P2.X)/2,(P1.Y+P2.Y)/2),
+              T,Hypot(P2.X-P1.X,P2.Y-P1.Y)/2,UpperPath)
+          else
+            DrawBridgeMarks(TPointF.Create((P1.X+P2.X)/2,(P1.Y+P2.Y)/2),
+              T,Hypot(P2.X-P1.X,P2.Y-P1.Y)/2,UpperPath);
+        end;
+      end;
+  finally
+    Canvas.Restore;
+  end;
+end;
+
+procedure RenderMapRakuCrossingExpressionsToCanvas(Document: TVectArtDocument;
+  const Canvas: ISkCanvas);
+var Bounds:TRectF;
+begin
+  if (Document=nil) or (Canvas=nil) or (Document.CanvasLayer=nil) then Exit;
+  Bounds:=TRectF.Create(-Document.CanvasLayer.Width*0.5,
+    -Document.CanvasLayer.Height*0.5,Document.CanvasLayer.Width*0.5,
+    Document.CanvasLayer.Height*0.5);
+  RenderMapRakuCrossingExpressions(Document,nil,Document.CanvasLayer.Width,
+    Document.CanvasLayer.Height,Bounds,Canvas);
+end;
+
 procedure RenderVectArtDocument(Document: TVectArtDocument;
   Target: TVectArtRenderBuffer; Width, Height: Integer;
   MinimumStrokeWidth: Single;
@@ -636,6 +855,7 @@ begin
   RenderVectArtLevelRanges(Document, Target, Width, Height, 1,
     Document.LayerCount - 1, LogicalBounds, MinimumStrokeWidth,
     InputTextLayer, InputTextOutlineColor);
+  RenderMapRakuCrossingExpressions(Document,Target,Width,Height,LogicalBounds);
 end;
 
 function FitMapRakuThumbnailBounds(const ContentBounds: TRectF;

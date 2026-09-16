@@ -54,6 +54,7 @@ var
   StopsJson: TJSONArray;
   TransformJson: TJSONArray;
 begin
+  LayerJson.AddPair('id', Layer.PersistentId);
   if not Layer.Transform.IsIdentity then
   begin
     TransformJson := TJSONArray.Create;
@@ -192,6 +193,9 @@ var
   ContourIndex: Integer;
   ContourJson: TJSONObject;
   ContoursJson: TJSONArray;
+  Crossing: TMapRakuCrossingRelation;
+  CrossingJson: TJSONObject;
+  CrossingsJson: TJSONArray;
   Ellipse: TMapRakuEllipseLayer;
   EllipseJson: TJSONObject;
   EllipseLine: TMapRakuEllipseLineLayer;
@@ -466,6 +470,7 @@ begin
         PathJson.AddPair('type', 'path');
         PathJson.AddPair('name', Path.Name);
         PathJson.AddPair('mapElement', Path.MapElement);
+        PathJson.AddPair('mapStepCount',TJSONNumber.Create(Path.MapStepCount));
         PathJson.AddPair('closed', TJSONBool.Create(Path.Closed));
         PathJson.AddPair('opacity', TJSONNumber.Create(Path.Opacity));
         PathJson.AddPair('strokeColor',
@@ -824,6 +829,19 @@ begin
       if I = Document.SelectedIndex then
         SerializedSelectedIndex := LayersJson.Count;
     end;
+    CrossingsJson := TJSONArray.Create;
+    for I := 0 to Document.CrossingRelationCount - 1 do
+    begin
+      Crossing := Document.CrossingRelations[I];
+      CrossingJson := TJSONObject.Create;
+      CrossingJson.AddPair('objectAId', Crossing.ObjectAId);
+      CrossingJson.AddPair('objectBId', Crossing.ObjectBId);
+      CrossingJson.AddPair('kind', TJSONNumber.Create(Ord(Crossing.Kind)));
+      CrossingJson.AddPair('upperObjectId', Crossing.UpperObjectId);
+      CrossingJson.AddPair('rangeMargin', TJSONNumber.Create(Crossing.RangeMargin));
+      CrossingsJson.AddElement(CrossingJson);
+    end;
+    Root.AddPair('crossingRelations', CrossingsJson);
     Root.AddPair('selectedIndex',
       TJSONNumber.Create(SerializedSelectedIndex));
     Result := Root.ToJSON;

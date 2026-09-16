@@ -52,8 +52,8 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win64)'!=''">
         <VerInfo_Locale>1041</VerInfo_Locale>
-        <UWP_DelphiLogo44>Image\Icon.png</UWP_DelphiLogo44>
-        <UWP_DelphiLogo150>Image\Icon.png</UWP_DelphiLogo150>
+        <UWP_DelphiLogo44>Image\Icon_2.png</UWP_DelphiLogo44>
+        <UWP_DelphiLogo150>Image\Icon_2.png</UWP_DelphiLogo150>
         <Icon_MainIcon>Image\Icon_multi.ico</Icon_MainIcon>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1)'!=''">
@@ -91,6 +91,7 @@
         <DCCReference Include="Source\Map\Symbols\MapRakuSymbols.pas"/>
         <DCCReference Include="Source\Map\Export\MapRakuExport.pas"/>
         <DCCReference Include="Source\Map\MapRakuMapCommands.pas"/>
+        <DCCReference Include="Source\Map\Geometry\MapRakuCrossings.pas"/>
         <DCCReference Include="Source\Map\MapRakuMapPanel.pas"/>
         <DCCReference Include="Source\Map\MapRakuPathRenderer.pas"/>
         <DCCReference Include="Source\Map\MapRakuRailRenderer.pas"/>
@@ -278,7 +279,7 @@
                 <Platform value="Win64">True</Platform>
             </Platforms>
             <Deployment Version="5">
-                <DeployFile LocalName="Image\Icon.png" Configuration="Debug" Class="UWP_DelphiLogo44">
+                <DeployFile LocalName="Image\Icon_2.png" Configuration="Debug" Class="UWP_DelphiLogo44">
                     <Platform Name="Win64">
                         <RemoteDir>Assets\</RemoteDir>
                         <RemoteName>Logo44x44.png</RemoteName>

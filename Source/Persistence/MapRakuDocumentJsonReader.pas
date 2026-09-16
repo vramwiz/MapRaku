@@ -20,7 +20,7 @@ uses
   System.Generics.Collections, System.IOUtils, System.JSON, System.Math,
   System.StrUtils, System.SysUtils, System.Types, Vcl.Graphics, MapRakuFilters,
   MapRakuPaintStyles, MapRakuTextureJson, MapRakuPatternJson,
-  MapRakuProjectiveTransform;
+  MapRakuProjectiveTransform, MapRakuTheme;
 
 const
   DOCUMENT_FORMAT_VERSION = 1;
@@ -326,6 +326,8 @@ var
   I: Integer;
   PaintStyle: TMapRakuPaintStyle;
 begin
+  Layer.PersistentId := ReadOptionalString(LayerJson, 'id',
+    Layer.PersistentId);
   Layer.Transform := ReadLayerTransform(LayerJson);
   Layer.FlipHorizontal := ReadOptionalBoolean(LayerJson,
     'flipHorizontal', False);
@@ -481,6 +483,10 @@ var
   ChildSkippedReferenceCount: Integer;
   ChildErrorMessage: string;
   ChildText: string;
+  CrossingIndex: Integer;
+  CrossingJson: TJSONObject;
+  CrossingsJson: TJSONArray;
+  CrossingKindValue: Integer;
   CharacterPathOffsetIndex: Integer;
   CharacterPathOffsetsJson: TJSONArray;
   CharacterPositionManualIndex: Integer;
@@ -856,7 +862,12 @@ begin
           PathValue.Opacity := ReadSingle(LayerJson, 'opacity');
           PathValue.StrokeColor := clBlack;
           PathValue.MapElement := ReadOptionalString(LayerJson, 'mapElement', '');
-          if not MatchStr(PathValue.MapElement, ['', 'road', 'jr', 'rail', 'river']) then
+          PathValue.MapStepCount := 0;
+          if LayerJson.GetValue('mapStepCount') is TJSONNumber then
+            PathValue.MapStepCount := Max(0,
+              TJSONNumber(LayerJson.GetValue('mapStepCount')).AsInt);
+          if not MatchStr(PathValue.MapElement, ['', 'road', 'jr', 'rail',
+            'river', 'stairs-up', 'stairs-down', 'pedestrian-bridge']) then
             raise EConvertError.Create('不明な地図経路種別');
           PathValue.StrokeWidth := 1.0;
           PathValue.MifStrokeStyle := vssSolid;
@@ -1343,6 +1354,32 @@ begin
         if (LayerTypes[I] <> '') and (SelectedIndex = I + 1) then
           LoadedSelectedIndex := Document.LayerCount - 1;
       end;
+      Document.ClearCrossingRelations;
+      if Root.GetValue('crossingRelations') is TJSONArray then
+        CrossingsJson := TJSONArray(Root.GetValue('crossingRelations'))
+      else
+        CrossingsJson := nil;
+      if CrossingsJson <> nil then
+        for CrossingIndex := 0 to CrossingsJson.Count - 1 do
+        begin
+          if not (CrossingsJson.Items[CrossingIndex] is TJSONObject) then
+            raise EConvertError.CreateFmt('Crossing relation %d is invalid',
+              [CrossingIndex]);
+          CrossingJson := TJSONObject(CrossingsJson.Items[CrossingIndex]);
+          CrossingKindValue := ReadInteger(CrossingJson, 'kind');
+          if (CrossingKindValue < Ord(Low(TMapRakuCrossingKind))) or
+            (CrossingKindValue > Ord(High(TMapRakuCrossingKind))) then
+            raise EConvertError.CreateFmt('Crossing relation %d has invalid kind',
+              [CrossingIndex]);
+          Document.SetCrossingRelation(
+            ReadString(CrossingJson,'objectAId'),
+            ReadString(CrossingJson,'objectBId'),
+            TMapRakuCrossingKind(CrossingKindValue),
+            ReadString(CrossingJson,'upperObjectId'),
+            ReadSingle(CrossingJson,'rangeMargin'));
+        end;
+      NormalizeMapRailTheme(Document,
+        Document.CanvasLayer.BackgroundColor=clBlack);
       Document.SelectedIndex := LoadedSelectedIndex;
       Document.Changed;
       Result := True;

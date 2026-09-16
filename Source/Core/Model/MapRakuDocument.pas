@@ -45,6 +45,17 @@ type
   TMapRakuVertexKind = (slvkSharp, slvkBezier);
   // 穴や重複輪郭を含むShapeの内外判定規則。
   TMapRakuFillRule = (slfrEvenOdd, slfrNonZero);
+  TMapRakuCrossingKind = (mckNormal, mckRailroadCrossing, mckOverpass,
+    mckBridge, mckRailOverpass, mckNone);
+
+  TMapRakuCrossingRelation = class
+  public
+    ObjectAId: string;
+    ObjectBId: string;
+    Kind: TMapRakuCrossingKind;
+    UpperObjectId: string;
+    RangeMargin: Single;
+  end;
 
   TMapRakuVertex = record
     Position: TPointF;              // 頂点のドキュメント座標。
@@ -71,6 +82,7 @@ type
     FFlipHorizontal: Boolean;
     FFlipVertical: Boolean;
     FKind: TVectArtLayerKind;
+    FPersistentId: string;
     FLocked: Boolean;
     FName: string;
     FOpacity: Single;
@@ -102,6 +114,8 @@ type
     property FlipHorizontal: Boolean read FFlipHorizontal write FFlipHorizontal;
     property FlipVertical: Boolean read FFlipVertical write FFlipVertical;
     property Kind: TVectArtLayerKind read FKind;
+    // 保存後も交差関係から同じ対象を参照できる安定ID。
+    property PersistentId: string read FPersistentId write FPersistentId;
     property Locked: Boolean read FLocked write FLocked;
     property Name: string read FName write FName;
     property Opacity: Single read FOpacity write FOpacity;
@@ -487,6 +501,7 @@ type
   TVectArtPathLayer = class(TVectArtLayer)
   private
     FMapElement: string;
+    FMapStepCount: Integer;
     FClosed: Boolean;
     FLineCap: TVectArtLineCap;
     FStrokeColor: TColor;
@@ -507,6 +522,7 @@ type
       const Value: TArray<TMapRakuVertex>); override;
     function SupportsPathEditing: Boolean; override;
     property MapElement: string read FMapElement write FMapElement; // 空文字は通常の線。road / jr / rail / river。
+    property MapStepCount: Integer read FMapStepCount write FMapStepCount;
     property Closed: Boolean read FClosed write FClosed;
     property LineCap: TVectArtLineCap read FLineCap write FLineCap;
     property StrokeColor: TColor read FStrokeColor write FStrokeColor;
@@ -521,6 +537,7 @@ type
 
   TVectArtPathData = record
     MapElement: string; // 地図経路の種類。空文字は汎用Path。
+    MapStepCount: Integer; // 階段の段数。0は長さから自動決定。
     Transform: TArray<Double>; // 復元時にも保持する表示変形。未設定は恒等変換。
     Closed: Boolean;                        // 終点と始点を閉じる状態。
     LineCap: TVectArtLineCap;               // 開いたPathの線端形状。
@@ -607,6 +624,7 @@ type
   TVectArtDocument = class
   private
     FLayers: TObjectList<TVectArtLayer>;
+    FCrossingRelations: TObjectList<TMapRakuCrossingRelation>;
     FChangePending: Boolean;
     FDeferredChanged: Boolean;
     FDeferredNotificationCount: Integer;
@@ -618,10 +636,12 @@ type
     FSelectedLayers: TList<Integer>;
     FUpdateCount: Integer;
     function GetCanvasLayer: TVectArtCanvasLayer;
+    function GetCrossingRelationCount: Integer;
     function GetLayer(Index: Integer): TVectArtLayer;
     function GetLayerCount: Integer;
     function GetIsInteractiveUpdate: Boolean;
     function GetSelectionCount: Integer;
+    function GetCrossingRelation(Index: Integer): TMapRakuCrossingRelation;
     procedure SelectionChanged;
     procedure SetSelectedLayersCore(const Indices: array of Integer;
       Notify: Boolean);
@@ -639,6 +659,13 @@ type
     procedure EndDeferredNotification;
     procedure EndUpdate;
     function GetSelectedLayerIndices: TArray<Integer>;
+    function FindCrossingRelation(const ObjectAId, ObjectBId: string):
+      TMapRakuCrossingRelation;
+    procedure SetCrossingRelation(const ObjectAId, ObjectBId: string;
+      Kind: TMapRakuCrossingKind; const UpperObjectId: string;
+      RangeMargin: Single = 12);
+    procedure ClearCrossingRelations;
+    procedure RemoveCrossingRelation(const ObjectAId, ObjectBId: string);
     // 所有権を呼び出し側へ移し、レイヤーデータを破棄せずDocumentから取り外す。
     function ExtractLayer(Index: Integer): TVectArtLayer;
     // 呼び出し側から所有権を受け取り、既存レイヤーを指定積層位置へ挿入する。
@@ -745,6 +772,9 @@ type
     procedure SetSelectedLayers(const Indices: array of Integer);
     procedure ToggleSelectedLayer(Index: Integer);
     property CanvasLayer: TVectArtCanvasLayer read GetCanvasLayer;
+    property CrossingRelationCount: Integer read GetCrossingRelationCount;
+    property CrossingRelations[Index: Integer]: TMapRakuCrossingRelation
+      read GetCrossingRelation;
     property LayerCount: Integer read GetLayerCount;
     property Layers[Index: Integer]: TVectArtLayer read GetLayer; default;
     property IsInteractiveUpdate: Boolean read GetIsInteractiveUpdate;
@@ -991,8 +1021,12 @@ end;
 
 constructor TVectArtLayer.Create(AKind: TVectArtLayerKind;
   const AName: string);
+var
+  Id: TGUID;
 begin
   inherited Create;
+  CreateGUID(Id);
+  FPersistentId := GUIDToString(Id);
   FFilters := TObjectList<TMapRakuFilter>.Create(True);
   FTransform := TMapRakuTransform.Identity;
   FKind := AKind;
@@ -1447,6 +1481,7 @@ constructor TVectArtDocument.Create;
 begin
   inherited Create;
   FLayers := TObjectList<TVectArtLayer>.Create(True);
+  FCrossingRelations := TObjectList<TMapRakuCrossingRelation>.Create(True);
   FSelectedLayers := TList<Integer>.Create;
   FLayers.Add(TVectArtCanvasLayer.Create(DEFAULT_CANVAS_WIDTH,
     DEFAULT_CANVAS_HEIGHT, clWhite));
@@ -1455,9 +1490,67 @@ end;
 
 destructor TVectArtDocument.Destroy;
 begin
+  FCrossingRelations.Free;
   FSelectedLayers.Free;
   FLayers.Free;
   inherited Destroy;
+end;
+
+function TVectArtDocument.GetCrossingRelationCount: Integer;
+begin
+  Result := FCrossingRelations.Count;
+end;
+
+function TVectArtDocument.GetCrossingRelation(
+  Index: Integer): TMapRakuCrossingRelation;
+begin
+  Result := FCrossingRelations[Index];
+end;
+
+function TVectArtDocument.FindCrossingRelation(const ObjectAId,
+  ObjectBId: string): TMapRakuCrossingRelation;
+var R: TMapRakuCrossingRelation;
+begin
+  for R in FCrossingRelations do
+    if ((R.ObjectAId=ObjectAId) and (R.ObjectBId=ObjectBId)) or
+      ((R.ObjectAId=ObjectBId) and (R.ObjectBId=ObjectAId)) then Exit(R);
+  Result := nil;
+end;
+
+procedure TVectArtDocument.SetCrossingRelation(const ObjectAId,
+  ObjectBId: string; Kind: TMapRakuCrossingKind;
+  const UpperObjectId: string; RangeMargin: Single);
+var R: TMapRakuCrossingRelation;
+begin
+  if (ObjectAId='') or (ObjectBId='') or (ObjectAId=ObjectBId) then Exit;
+  R := FindCrossingRelation(ObjectAId,ObjectBId);
+  if R=nil then
+  begin
+    R:=TMapRakuCrossingRelation.Create;
+    R.ObjectAId:=ObjectAId; R.ObjectBId:=ObjectBId;
+    FCrossingRelations.Add(R);
+  end;
+  R.Kind:=Kind; R.UpperObjectId:=UpperObjectId;
+  R.RangeMargin:=Max(RangeMargin,0); Changed;
+end;
+
+procedure TVectArtDocument.ClearCrossingRelations;
+begin
+  if FCrossingRelations.Count=0 then Exit;
+  FCrossingRelations.Clear; Changed;
+end;
+
+procedure TVectArtDocument.RemoveCrossingRelation(const ObjectAId,
+  ObjectBId: string);
+var I:Integer; R:TMapRakuCrossingRelation;
+begin
+  for I:=FCrossingRelations.Count-1 downto 0 do
+  begin
+    R:=FCrossingRelations[I];
+    if ((R.ObjectAId=ObjectAId) and (R.ObjectBId=ObjectBId)) or
+      ((R.ObjectAId=ObjectBId) and (R.ObjectBId=ObjectAId)) then
+    begin FCrossingRelations.Delete(I); Changed; Exit; end;
+  end;
 end;
 
 procedure TVectArtDocument.Changed;
@@ -1821,6 +1914,7 @@ begin
   PathLayer.StrokeColor := Data.StrokeColor;
   PathLayer.MifStrokeStyle := Data.MifStrokeStyle;
   PathLayer.MapElement := Data.MapElement;
+  PathLayer.MapStepCount := Max(Data.MapStepCount,0);
   PathLayer.StrokeWidth := Max(Data.StrokeWidth, 0.0);
   PathLayer.WidthPoints := Data.WidthPoints;
   PathLayer.Visible := Data.Visible;
@@ -2273,6 +2367,7 @@ begin
   Data.StrokeColor := PathLayer.StrokeColor;
   Data.MifStrokeStyle := PathLayer.MifStrokeStyle;
   Data.MapElement := PathLayer.MapElement;
+  Data.MapStepCount := PathLayer.MapStepCount;
   Data.StrokeWidth := PathLayer.StrokeWidth;
   Data.WidthPoints := PathLayer.WidthPoints;
   Data.Visible := PathLayer.Visible;

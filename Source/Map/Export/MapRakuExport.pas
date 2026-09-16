@@ -46,6 +46,7 @@ begin
   end;
   for I := 1 to Document.LayerCount - 1 do
     DrawTree(Document[I], Canvas, Document.CanvasLayer.Width, Document.CanvasLayer.Height, 1);
+  RenderMapRakuCrossingExpressionsToCanvas(Document,Canvas);
 end;
 procedure ExportMapSvg(Document: TVectArtDocument; const FileName: string);
 var Stream: TFileStream; Canvas: ISkCanvas;
