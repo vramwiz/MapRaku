@@ -151,7 +151,12 @@ end;
 
 procedure TVectArtShapeCreation.CancelPath;
 begin
-  if FEditorState <> nil then FEditorState.EndMapPlacement;
+  if (FEditorState <> nil) and
+     (FEditorState.MapElement <> 'road') and
+     (FEditorState.MapElement <> 'river') and
+     (FEditorState.MapElement <> 'jr') and
+     (FEditorState.MapElement <> 'rail') then
+    FEditorState.EndMapPlacement;
   FActive := False;
   FCreationTool := vetSelect;
   FSnapGuides := nil;
@@ -460,7 +465,13 @@ begin
   begin
     Data.Name := Data.MapElement;
     InsertMapPath(FDocument, FEditHistory, Data,FStartConnect,FEndConnect,0.75/FZoom);
-    FEditorState.CurrentTool := vetSelect;
+    if not (Data.MapElement = 'road') and
+       not (Data.MapElement = 'river') and
+       not (Data.MapElement = 'jr') and
+       not (Data.MapElement = 'rail') then
+      FEditorState.CurrentTool := vetSelect;
+    if FEditorState.CurrentTool <> vetSelect then
+      FDocument.SetSelectedLayers([]);
     Exit;
   end;
   BeforeSelection := FDocument.GetSelectedLayerIndices;
@@ -1149,7 +1160,11 @@ begin
     CreateRectangle;
   FActive := False;
   FSnapGuides := nil;
-  FEditorState.EndMapPlacement;
+  if (FEditorState.MapElement <> 'road') and
+     (FEditorState.MapElement <> 'river') and
+     (FEditorState.MapElement <> 'jr') and
+     (FEditorState.MapElement <> 'rail') then
+    FEditorState.EndMapPlacement;
 end;
 
 function TVectArtShapeCreation.BuildFreehandPathVertices:
@@ -1265,7 +1280,15 @@ begin
   else
     CreatePath(Closed);
   CancelPath;
-  if FEditorState.MapElement <> '' then FEditorState.CurrentTool := vetSelect;
+  if (FEditorState.MapElement <> '') and
+     (FEditorState.MapElement <> 'road') and
+     (FEditorState.MapElement <> 'river') and
+     (FEditorState.MapElement <> 'jr') and
+     (FEditorState.MapElement <> 'rail') then
+    FEditorState.CurrentTool := vetSelect;
+  if (FEditorState.MapElement <> '') and
+     (FEditorState.CurrentTool <> vetSelect) then
+    FDocument.SetSelectedLayers([]);
 end;
 
 

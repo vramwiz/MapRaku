@@ -6,108 +6,79 @@ uses System.Classes, System.Types, Vcl.Controls, Vcl.Forms, Vcl.ExtCtrls, Vcl.St
 type
   TMapPresetButton = class(TCustomControl)
   private FTitle:string; FState:TVectArtEditorState; FDocument:TVectArtDocument;
+    FPreview:TBitmap; FPreviewBackground:TColor;
+    procedure PaintSymbolPreview;
   protected procedure Paint; override;
   public constructor Create(AOwner:TComponent); override;
+    destructor Destroy; override;
     property Title:string read FTitle write FTitle;
     property EditorState:TVectArtEditorState read FState write FState;
     property Document:TVectArtDocument read FDocument write FDocument;
+    property OnMouseWheel;
   end;
   TMapToolsPanel = class(TPanel)
   private
     FDocument:TVectArtDocument; FState:TVectArtEditorState;
     FHistory:TVectArtEditHistory; FCategory:TComboBox; FGallery:TScrollBox;
+    FFirstPreset:TMapPresetButton;
+    FOnCategoryChange:TNotifyEvent;
+    FRowTop,FRowHeight,FGroupItemCount:Integer;
     procedure CategoryChange(Sender:TObject); procedure PresetClick(Sender:TObject);
+    procedure PresetMouseWheel(Sender:TObject; Shift:TShiftState;
+      WheelDelta:Integer; MousePos:TPoint; var Handled:Boolean);
     procedure CategoryDrawItem(Control:TWinControl; Index:Integer; Rect:TRect;
       State:TOwnerDrawState);
-    procedure FillPresets; procedure AddPreset(Preset:Integer; const Title:string);
+    procedure FillPresets; procedure FillCategoryPresets(Index:Integer);
+    procedure AddCategoryHeader(const Title:string);
+    procedure AddPreset(Preset:Integer; const Title:string);
+    procedure ActivateFirstPreset;
     procedure ActivateLine(const Kind:string; Tool:TVectArtEditorTool;
       VertexKind:TMapRakuVertexKind; Color:TColor);
     procedure ActivateWaterShape(Tool:TVectArtEditorTool; VertexKind:TMapRakuVertexKind);
     procedure ActivateSymbol(SymbolIndex:Integer);
+    procedure ActivateGeneric(Tool:TVectArtEditorTool);
   public constructor CreateTools(Owner:TComponent; Document:TVectArtDocument;
     State:TVectArtEditorState; History:TVectArtEditHistory; Host:TWinControl);
     procedure RefreshState;
+    property OnCategoryChange:TNotifyEvent read FOnCategoryChange write FOnCategoryChange;
   end;
 implementation
-uses System.Math, Winapi.Windows, MapRakuToolPalette;
+uses System.Math, System.SysUtils, Winapi.Windows, MapRakuSymbols, MapRakuPresetThumbnail,
+  MapRakuPresetButtonPainter;
 
 function U(const C:array of Word):string;
 var I:Integer;
 begin SetLength(Result,Length(C)); for I:=0 to High(C) do Result[I+1]:=Char(C[I]); end;
 
 constructor TMapPresetButton.Create(AOwner:TComponent);
-begin inherited; Width:=72; Height:=64; Cursor:=crHandPoint; TabStop:=True; end;
+begin inherited; Width:=72; Height:=64; Cursor:=crHandPoint; TabStop:=True;
+  FPreviewBackground:=clNone; end;
+
+destructor TMapPresetButton.Destroy;
+begin FPreview.Free; inherited; end;
+
+procedure TMapPresetButton.PaintSymbolPreview;
+var Layer:TMapRakuGroupLayer; Background:TColor;
+begin
+  Background:=clWhite;
+  if (FDocument<>nil) and (FDocument.CanvasLayer<>nil) then
+    Background:=FDocument.CanvasLayer.BackgroundColor;
+  if (FPreview<>nil) and (FPreviewBackground<>Background) then
+    FreeAndNil(FPreview);
+  if FPreview=nil then begin
+    Layer:=CreateMapSymbol(Tag-100,MapSymbolDefaultLabel(Tag-100));
+    try FPreview:=CreateMapPresetThumbnail(Layer,64,42,Background);
+    finally Layer.Free; end;
+    FPreviewBackground:=Background;
+  end;
+  Canvas.Draw(4,3,FPreview);
+end;
 
 procedure TMapPresetButton.Paint;
-var R:TRect; Y:Integer; Selected:Boolean;
-  procedure LinePreview(Color:TColor; Rail:Boolean; Curved:Boolean;
-    Secondary:TColor=clWhite);
-  var P:array[0..3] of TPoint;
-  begin
-    Canvas.Pen.Color:=Color; Canvas.Pen.Width:=IfThen(Rail,7,5);
-    P[0]:=Point(8,28); P[1]:=Point(25,16); P[2]:=Point(45,38); P[3]:=Point(64,20);
-    if Curved then Canvas.PolyBezier([P[0],P[1],P[2],P[3]])
-    else if Tag in [0,10,13,20] then begin Canvas.MoveTo(8,27); Canvas.LineTo(64,27); end
-    else Canvas.Polyline(P);
-    if Rail then begin Canvas.Pen.Color:=Secondary; Canvas.Pen.Width:=2;
-      if Curved then Canvas.PolyBezier([P[0],P[1],P[2],P[3]])
-      else if Tag in [0,10,13,20] then begin Canvas.MoveTo(8,27); Canvas.LineTo(64,27); end
-      else Canvas.Polyline(P); end;
-  end;
 begin
-  Selected:=(FState<>nil) and (FState.ActiveMapPreset=Tag);
-  if Selected then Canvas.Brush.Color:=MAPRAKU_TOOL_SELECTED_COLOR
-  else Canvas.Brush.Color:=$00303030;
-  Canvas.FillRect(ClientRect);
-  if Selected then begin
-    Canvas.Pen.Color:=MAPRAKU_TOOL_SELECTED_BORDER;
-    Canvas.Pen.Width:=2;
-  end else begin
-    Canvas.Pen.Color:=IfThen(Focused,$00D77800,$00606060);
-    Canvas.Pen.Width:=1;
-  end;
-  Canvas.Brush.Style:=bsClear;
-  R:=ClientRect; Dec(R.Right); Dec(R.Bottom); Canvas.Rectangle(R);
-  Canvas.Pen.Width:=1;
-  case Tag of
-    0..2: if FDocument<>nil then
-      LinePreview(FDocument.CanvasLayer.RoadPresetColor,False,Tag=2)
-      else LinePreview($00E4E4E4,False,Tag=2);
-    10..12: if FDocument<>nil then
-      LinePreview(FDocument.CanvasLayer.JrPrimaryColor,True,
-        (Tag mod 3)=2,FDocument.CanvasLayer.JrSecondaryColor)
-      else LinePreview(clBlack,True,(Tag mod 3)=2);
-    13..15: if FDocument<>nil then
-      LinePreview(FDocument.CanvasLayer.RailPrimaryColor,True,
-        (Tag mod 3)=2,FDocument.CanvasLayer.RailSecondaryColor)
-      else LinePreview(clBlack,True,(Tag mod 3)=2);
-    20..22: if FDocument<>nil then
-      LinePreview(FDocument.CanvasLayer.RiverPresetColor,False,Tag=22)
-      else LinePreview($00E8A050,False,Tag=22);
-    23: begin Canvas.Brush.Style:=bsSolid; Canvas.Brush.Color:=$00E8A050;
-      Canvas.Pen.Color:=$00C08030; Canvas.Ellipse(15,10,57,42); end;
-    24: begin Canvas.Brush.Style:=bsSolid; Canvas.Brush.Color:=$00E8A050;
-      Canvas.Rectangle(14,10,58,42); end;
-    25: begin Canvas.Brush.Style:=bsSolid; Canvas.Brush.Color:=$00E8A050;
-      Canvas.RoundRect(14,10,58,42,14,14); end;
-    26,27: begin Canvas.Brush.Style:=bsSolid; Canvas.Brush.Color:=$00E8A050;
-      Canvas.Polygon([Point(10,34),Point(22,12),Point(45,9),Point(63,29),Point(42,42)]); end;
-    200..202: begin
-      Canvas.Brush.Style:=bsSolid; Canvas.Brush.Color:=clWhite;
-      Canvas.Pen.Color:=clBlack; Canvas.Rectangle(12,10,60,40);
-      for Y:=14 to 38 do if ((Y-14) mod 5)=0 then begin
-        Canvas.MoveTo(14+(Y-14) div 3,Y); Canvas.LineTo(58-(Y-14) div 3,Y);
-      end;
-    end;
-  else
-    Canvas.Brush.Style:=bsSolid; Canvas.Brush.Color:=clWhite; Canvas.Pen.Color:=clBlack;
-    Canvas.Ellipse(23,10,49,36); Canvas.Font.Color:=clBlack;
-    Canvas.TextOut(31,15,Copy(FTitle,1,1));
-  end;
-  Canvas.Brush.Style:=bsClear; Canvas.Font.Color:=clWhite; Canvas.Font.Height:=-11;
-  Y:=Height-18; R:=Rect(2,Y,Width-2,Height-2);
-  DrawText(Canvas.Handle,PChar(FTitle),Length(FTitle),R,
-    DT_CENTER or DT_SINGLELINE or DT_END_ELLIPSIS);
+  // 記号の縮図キャッシュはボタンが持ち、他の描画は共通の描画担当に任せる。
+  PaintMapPresetButton(Canvas,Width,Height,Tag,FTitle,FDocument,
+    (FState<>nil) and (FState.ActiveMapPreset=Tag),Focused,PaintSymbolPreview);
 end;
 
 constructor TMapToolsPanel.CreateTools(Owner:TComponent; Document:TVectArtDocument;
@@ -119,31 +90,62 @@ begin
   FCategory.Style:=csOwnerDrawFixed; FCategory.ItemHeight:=22; FCategory.Color:=$00353535;
   FCategory.Font.Color:=clWhite; FCategory.ParentFont:=False;
   FCategory.OnDrawItem:=CategoryDrawItem;
+  FCategory.Items.Add(U([$3059,$3079,$3066]));
   FCategory.Items.Add(U([$9053,$8DEF]));
   FCategory.Items.Add(U([$7DDA,$8DEF])); FCategory.Items.Add(U([$6C34,$7CFB]));
   FCategory.Items.Add(U([$8A18,$53F7])); FCategory.Items.Add(U([$6B69,$9053]));
+  FCategory.Items.Add(U([$5EFA,$7269])); FCategory.Items.Add(U([$56F3,$5F62]));
+  FCategory.Items.Add(U([$6587,$5B57])); FCategory.Items.Add(U([$305D,$306E,$4ED6]));
   FCategory.ItemIndex:=0; FCategory.OnChange:=CategoryChange;
   FGallery:=TScrollBox.Create(Self); FGallery.Parent:=Self; FGallery.SetBounds(6,48,162,ClientHeight-54);
   FGallery.Anchors:=[akLeft,akTop,akRight,akBottom]; FGallery.BorderStyle:=bsNone;
-  FGallery.Color:=Color; FGallery.HorzScrollBar.Visible:=False; FillPresets;
+  FGallery.Color:=Color; FGallery.HorzScrollBar.Visible:=False;
+  FGallery.OnMouseWheel:=PresetMouseWheel;
+  FillPresets; ActivateFirstPreset;
+end;
+
+procedure TMapToolsPanel.AddCategoryHeader(const Title:string);
+var LabelControl:TLabel;
+begin
+  FRowTop:=FRowTop+FRowHeight+5;
+  LabelControl:=TLabel.Create(Self);
+  LabelControl.Parent:=FGallery;
+  LabelControl.SetBounds(6,FRowTop,146,18);
+  LabelControl.Caption:=Title;
+  LabelControl.Font.Color:=clWhite;
+  LabelControl.Font.Style:=[fsBold];
+  LabelControl.ParentFont:=False;
+  Inc(FRowTop,22);
+  FRowHeight:=0;
+  FGroupItemCount:=0;
 end;
 
 procedure TMapToolsPanel.AddPreset(Preset:Integer; const Title:string);
-var B:TMapPresetButton; N:Integer;
-begin N:=FGallery.ControlCount; B:=TMapPresetButton.Create(Self); B.Parent:=FGallery;
-  B.SetBounds(4+(N mod 2)*76,4+(N div 2)*68,72,64); B.Tag:=Preset; B.Title:=Title;
+var B:TMapPresetButton; CardHeight:Integer;
+begin
+  if (FGroupItemCount>0) and (FGroupItemCount mod 2=0) then begin
+    Inc(FRowTop,FRowHeight+4);
+    FRowHeight:=0;
+  end;
+  if Preset in [10..15] then CardHeight:=78 else CardHeight:=64;
+  FRowHeight:=Max(FRowHeight,CardHeight);
+  B:=TMapPresetButton.Create(Self); B.Parent:=FGallery;
+  if FFirstPreset=nil then FFirstPreset:=B;
+  B.SetBounds(4+(FGroupItemCount mod 2)*76,FRowTop,72,CardHeight);
+  Inc(FGroupItemCount);
+  B.Tag:=Preset; B.Title:=Title;
   B.EditorState:=FState;
   B.Document:=FDocument;
-  B.OnClick:=PresetClick; B.ShowHint:=True; B.Hint:=Title;
+  B.OnClick:=PresetClick; B.OnMouseWheel:=PresetMouseWheel;
+  B.ShowHint:=True; B.Hint:=Title;
 end;
 
-procedure TMapToolsPanel.FillPresets;
+procedure TMapToolsPanel.FillCategoryPresets(Index:Integer);
 begin
-  while FGallery.ControlCount>0 do FGallery.Controls[FGallery.ControlCount-1].Free;
-  case FCategory.ItemIndex of
+  case Index of
     0: begin AddPreset(0,U([$76F4,$7DDA])); AddPreset(1,U([$92ED,$89D2,$9023,$7D9A])); AddPreset(2,U([$30D9,$30B8,$30A7,$9023,$7D9A])); end;
     1: begin AddPreset(10,'JR '+U([$76F4,$7DDA])); AddPreset(11,'JR '+U([$92ED,$89D2])); AddPreset(12,'JR '+U([$30D9,$30B8,$30A7]));
-      AddPreset(13,U([$79C1,$9244])+' '+U([$76F4,$7DDA])); AddPreset(14,U([$79C1,$9244])+' '+U([$92ED,$89D2])); AddPreset(15,U([$79C1,$9244])+' '+U([$30D9,$30B8,$30A7])); end;
+      AddPreset(13,U([$79C1,$9244,$76F4,$7DDA])); AddPreset(14,U([$79C1,$9244,$92ED,$89D2])); AddPreset(15,U([$79C1,$9244,$30D9,$30B8,$30A7])); end;
     2: begin AddPreset(20,U([$5DDD,$76F4,$7DDA])); AddPreset(21,U([$5DDD,$92ED,$89D2])); AddPreset(22,U([$5DDD,$30D9,$30B8,$30A7]));
       AddPreset(23,U([$5186])); AddPreset(24,U([$56DB,$89D2])); AddPreset(25,U([$89D2,$4E38])); AddPreset(26,U([$9589,$3058,$305F,$30D1,$30B9])); AddPreset(27,U([$30D9,$30B8,$30A7,$30D1,$30B9])); end;
     3: begin AddPreset(100,U([$99C5])); AddPreset(101,U([$4FE1,$53F7])); AddPreset(102,U([$6A2A,$65AD,$6B69,$9053]));
@@ -152,10 +154,55 @@ begin
     4: begin AddPreset(200,U([$968E,$6BB5])+' '+U([$4E0A,$308A]));
       AddPreset(201,U([$968E,$6BB5])+' '+U([$4E0B,$308A]));
       AddPreset(202,U([$6B69,$9053,$6A4B])); end;
+    5: begin AddPreset(300,U([$5EFA,$7269])+' '+U([$56DB,$89D2]));
+      AddPreset(301,U([$5EFA,$7269])+' '+U([$89D2,$4E38]));
+      AddPreset(302,U([$5EFA,$7269])+' '+U([$89D2,$4E38,$56DB,$89D2])); end;
+    6: begin AddPreset(310,U([$76F4,$7DDA])); AddPreset(311,U([$81EA,$7531,$66F2,$7DDA]));
+      AddPreset(312,U([$9023,$7D9A])); AddPreset(313,U([$56DB,$89D2]));
+      AddPreset(314,U([$89D2,$4E38])); AddPreset(315,U([$9589,$3058,$305F,$56F3,$5F62]));
+      AddPreset(316,U([$89D2,$4E38,$56DB,$89D2])); AddPreset(317,U([$5186])); end;
+    7: begin AddPreset(320,U([$6587,$5B57])); AddPreset(321,U([$7D4C,$8DEF,$6587,$5B57])); end;
+    8: begin AddPreset(330,U([$5F27,$5F62])); AddPreset(331,U([$5F27])); end;
   end;
 end;
 
-procedure TMapToolsPanel.CategoryChange(Sender:TObject); begin FillPresets; end;
+procedure TMapToolsPanel.FillPresets;
+var I:Integer;
+begin
+  FFirstPreset:=nil;
+  while FGallery.ControlCount>0 do FGallery.Controls[FGallery.ControlCount-1].Free;
+  FRowTop:=4; FRowHeight:=0; FGroupItemCount:=0;
+  if FCategory.ItemIndex=0 then
+    for I:=0 to FCategory.Items.Count-2 do begin
+      AddCategoryHeader(FCategory.Items[I+1]);
+      FillCategoryPresets(I);
+    end
+  else
+    FillCategoryPresets(FCategory.ItemIndex-1);
+  FGallery.VertScrollBar.Position:=0;
+end;
+
+procedure TMapToolsPanel.ActivateFirstPreset;
+begin
+  if FFirstPreset<>nil then PresetClick(FFirstPreset);
+end;
+
+procedure TMapToolsPanel.CategoryChange(Sender:TObject);
+begin
+  if Assigned(FOnCategoryChange) then FOnCategoryChange(Self);
+  FillPresets;
+  ActivateFirstPreset;
+end;
+
+procedure TMapToolsPanel.PresetMouseWheel(Sender:TObject; Shift:TShiftState;
+  WheelDelta:Integer; MousePos:TPoint; var Handled:Boolean);
+begin
+  Handled:=(WheelDelta<>0) and
+    (FGallery.VertScrollBar.Range>FGallery.ClientHeight);
+  if Handled then
+    FGallery.VertScrollBar.Position:=Max(0,
+      FGallery.VertScrollBar.Position-MulDiv(WheelDelta,64,WHEEL_DELTA));
+end;
 
 procedure TMapToolsPanel.RefreshState;
 var I:Integer;
@@ -194,19 +241,23 @@ begin FState.CurrentTool:=vetSelect; FState.OpenGroup:=nil; FState.PendingSymbol
 
 procedure TMapToolsPanel.ActivateSymbol(SymbolIndex:Integer);
 begin FState.CurrentTool:=vetSelect; FState.OpenGroup:=nil; FState.MapElement:='';
-  case SymbolIndex of
-    0:FState.PendingSymbolLabel:=U([$99C5]); 1:FState.PendingSymbolLabel:=U([$4FE1,$53F7]);
-    2:FState.PendingSymbolLabel:=U([$6A2A,$65AD,$6B69,$9053]);
-    3:FState.PendingSymbolLabel:=U([$6B69,$9053,$6A4B]); 4,7:FState.PendingSymbolLabel:='1';
-    5:FState.PendingSymbolLabel:=U([$99D0,$8ECA,$5834]); 6:FState.PendingSymbolLabel:=U([$65B9,$4F4D]);
-    9:FState.PendingSymbolLabel:=U([$77E2,$5370]);
-  end;
+  FState.PendingSymbolLabel:=MapSymbolDefaultLabel(SymbolIndex);
   FState.PendingSymbol:=SymbolIndex; end;
+
+procedure TMapToolsPanel.ActivateGeneric(Tool:TVectArtEditorTool);
+begin
+  FState.CurrentTool:=vetSelect;
+  FState.OpenGroup:=nil;
+  FState.PendingSymbol:=-1;
+  FState.MapElement:='';
+  FState.ActivateTool(Tool);
+end;
 
 procedure TMapToolsPanel.PresetClick(Sender:TObject);
 var P:Integer; Kind:string; Base:Integer;
 begin
   P:=TControl(Sender).Tag;
+  FState.EndMapPlacement;
   if P in [200..202] then begin
     if P=200 then Kind:='stairs-up' else if P=201 then Kind:='stairs-down'
     else Kind:='pedestrian-bridge';
@@ -231,7 +282,33 @@ begin
       23:ActivateWaterShape(vetEllipse,slvkSharp); 24:ActivateWaterShape(vetRectangle,slvkSharp);
       25:ActivateWaterShape(vetRoundedRectangle,slvkSharp); 26:ActivateWaterShape(vetShape,slvkSharp);
       27:ActivateWaterShape(vetShape,slvkBezier);
-    end;
+    end
+  else if (P>=300) and (P<=302) then
+    case P of
+      300:ActivateGeneric(vetRectangle);
+      301:ActivateGeneric(vetEllipse);
+      302:ActivateGeneric(vetRoundedRectangle);
+    end
+  else if (P>=310) and (P<=317) then
+    case P of
+      310:ActivateGeneric(vetLine);
+      311:ActivateGeneric(vetFreehand);
+      312:ActivateGeneric(vetPath);
+      313:ActivateGeneric(vetRectangle);
+      314:ActivateGeneric(vetEllipse);
+      315:ActivateGeneric(vetShape);
+      316:ActivateGeneric(vetRoundedRectangle);
+      317:ActivateGeneric(vetArcShape);
+    end
+  else if (P>=320) and (P<=321) then
+    if P=320 then ActivateGeneric(vetText)
+    else ActivateGeneric(vetTextPath)
+  else if (P>=330) and (P<=331) then
+    if P=330 then ActivateGeneric(vetShape)
+    else ActivateGeneric(vetArcShape);
+  if (FState.MapElement='road') or (FState.MapElement='river') then
+    FState.BeginMapPlacement(FDocument);
+  FDocument.SetSelectedLayers([]);
   FState.ActiveMapPreset:=P;
   RefreshState;
 end;

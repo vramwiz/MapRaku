@@ -1,5 +1,5 @@
-﻿// MapRakuのメイン画面を提供する。
-// 個別ツールの内容はFrameへ分離し、このユニットは外枠と初期配置だけを担当する。
+﻿// メイン画面の各Frameを結び、文書の入出力と画面全体の操作を調停する。
+// 編集・描画・配置候補の実装は各ユニットへ委譲する。
 unit MapRakuMainForm;
 
 interface
@@ -18,12 +18,15 @@ uses
   MapRakuGroupCommands,
   MapRakuGeometryPropertiesFrame,
   MapRakuMapPanel,
+  MapRakuRecentFiles,
   MapRakuObjectPropertiesFrame, MapRakuToolFrames,
-  MapRakuToolPaletteFrame, MapRakuObjectContextMenu,
+  MapRakuObjectContextMenu,
   MapRakuTextContextMenu, MapRakuPathContextMenu,
   MapRakuTransformContextMenu,
   MapRakuArrangementContextMenu,
   PipeServerTThread, MapRakuAutomationPipeServer, Vcl.Graphics;
+
+const WM_MAPRAKU_RECENT_REFRESH = WM_APP + 101;
 
 type
   TMainForm = class(TForm)
@@ -60,6 +63,8 @@ type
     FFileDropCaptionBase: string;
     FFileDropCaptionEnabled: Boolean;
     FFileMenu: TVectArtDarkPopupMenu;
+    FRecentMenu: TVectArtDarkPopupMenu;
+    FRecentFiles: TMapRakuRecentFiles;
     FGeometryPopup: TForm;
     FGeometryPopupFrame: TMapRakuGeometryPropertiesFrame;
     FLayerFrame: TLayerPanelFrame;
@@ -69,7 +74,6 @@ type
     FObjectContextMenu: TMapRakuObjectContextMenu;
     FSkiaAcquired: Boolean;
     FShortcuts: TShortcutAction;
-    FToolPaletteFrame: TToolPaletteFrame;
     FViewMenu: TVectArtDarkPopupMenu;
     FLayoutEditing: Boolean;
     FAutomationPipeStarted: Boolean; // このFormが専用Pipeを所有している間だけTrue。
@@ -77,10 +81,10 @@ type
     FMenuGroup: TVectArtDarkMenuGroup;
     FLayerMenuItem: TPanel;
     FObjectPropertiesMenuItem: TPanel;
-    FToolPaletteMenuItem: TPanel;
     function ConfirmSave: Boolean;
     procedure FileNewClick(Sender: TObject);
     procedure ActivateToolShortcut(const Tool: TVectArtEditorTool);
+    procedure MapCategoryChanged(Sender: TObject);
     procedure AttachFrame(AFrame: TFrame; AHost: TWinControl);
     procedure CanvasSettingsRequest(Sender: TObject);
     function CreateViewMenuItem(const Caption: string): TPanel;
@@ -88,7 +92,10 @@ type
     procedure FinalizeSkiaRuntime;
     procedure FileOpenClick(Sender: TObject);
     procedure FileSaveClick(Sender: TObject);
+    procedure FileSaveAsClick(Sender: TObject);
+    procedure RecentFileClick(Sender: TObject);
     procedure ExportClick(Sender: TObject);
+    procedure ExportTypeChange(Sender: TObject);
     procedure GeometryPopupDeactivate(Sender: TObject);
     procedure GeometryPopupKeyDown(Sender: TObject; var Key: Word;
       Shift: TShiftState);
@@ -104,8 +111,13 @@ type
     function ToolShortcutEnabled: Boolean;
     procedure LoadLayoutSettings;
     procedure LoadDocument;
+    function LoadDocumentFile(const FileName: string): Boolean;
+    procedure RebuildRecentMenu;
+    procedure RememberFile(const FileName: string);
     procedure SaveLayoutSettings;
+    procedure SaveDocument;
     procedure SaveDocumentAs;
+    function SaveDocumentFile(const FileName: string): Boolean;
     procedure SelectAllLayers;
     procedure SetLayoutEditing(const Value: Boolean);
     procedure ToolMenuItemClick(Sender: TObject);
@@ -115,6 +127,8 @@ type
     procedure UpdateToolMenuItems;
     procedure WMDropFiles(var Message: TWMDropFiles); message WM_DROPFILES;
     procedure WMAutomationPipe(var Message: TMessage); message WM_PIPE_NOTIFY;
+    procedure WMRecentMenuRefresh(var Message: TMessage);
+      message WM_MAPRAKU_RECENT_REFRESH;
   protected
     // 外部ホストによる文書初期化後、表示直前の使用色を取り込む。
     procedure DoShow; override;
@@ -139,7 +153,7 @@ var
 implementation
 
 uses
-  MapRakuFile, MapRakuExport, System.UITypes, System.IniFiles, System.IOUtils, System.Math, System.Types,
+  MapRakuFile, MapRakuFileDialogs, MapRakuExport, System.UITypes, System.IniFiles, System.IOUtils, System.Math, System.Types,
   TextRendererSkiaBootstrap, TextRendererSkiaRuntime,
   MapRakuCanvasSettingsDialog, MapRakuTheme, MapRakuMapCommands,
   MapRakuDocumentJson, MapRakuImageImport,
@@ -168,6 +182,12 @@ begin
     FEditorState.ActiveMapPreset := -1;
     FEditorState.ActivateTool(Tool);
   end;
+end;
+
+procedure TMainForm.MapCategoryChanged(Sender: TObject);
+begin
+  if (FEditorFrame <> nil) and (FEditorFrame.CanvasControl <> nil) then
+    FEditorFrame.CanvasControl.EndPlacement;
 end;
 
 function ConstrainToMonitor(const Bounds: TRect): TRect;
@@ -299,23 +319,19 @@ begin
     pnlLeftDockArea, pnlRightDockArea, pnlLeftDropTarget,
     pnlRightDropTarget, splLeftRegion, splRightRegion);
   FLayerFrame := TLayerPanelFrame.Create(Self);
-  FToolPaletteFrame := TToolPaletteFrame.Create(Self);
   FObjectPropertiesFrame := TObjectPropertiesFrame.Create(Self);
   // Context設定は、各Frameが正式なドックスロットへ接続された後に行う。
   FDockManager.RegisterTool(FLayerFrame, vdsLeft);
-  FDockManager.RegisterTool(FToolPaletteFrame, vdsLeft);
   FDockManager.RegisterTool(FObjectPropertiesFrame, vdsRight);
   FLayerFrame.Context := FDesignerContext;
   FLayerFrame.LayerList.OnObjectContextMenu :=
     FObjectContextMenu.ShowForObject;
-  FToolPaletteFrame.Context := FDesignerContext;
   FObjectPropertiesFrame.Context := FDesignerContext;
   FDockManager.OnToolVisibilityChanged := ToolVisibilityChanged;
 
   pnlViewMenuPopup.Height := MulDiv(128, CurrentPPI, 96);
   pnlLayoutEditMenuItem.Align := alTop;
   FObjectPropertiesMenuItem := CreateViewMenuItem('Object Properties');
-  FToolPaletteMenuItem := CreateViewMenuItem('Tools');
   FLayerMenuItem := CreateViewMenuItem('Layers');
 
   LayoutFolder := TPath.Combine(TPath.GetDocumentsPath, 'MapRaku');
@@ -326,6 +342,14 @@ begin
     on E: Exception do
       lblStatus.Caption := 'Layout folder error: ' + E.Message;
   end;
+  FRecentFiles := TMapRakuRecentFiles.Create;
+  if not FindCmdLineSwitch('test', True) then
+    try
+      FRecentFiles.Load(FLayoutFileName);
+    except
+      on E: Exception do
+        lblStatus.Caption := '履歴の読込に失敗しました: ' + E.Message;
+    end;
 
   FLayoutEditing := False;
   FViewMenu.Close;
@@ -334,6 +358,7 @@ begin
   LoadLayoutSettings;
   FMapToolsPanel := TMapToolsPanel.CreateTools(Self, FDocument,
     FEditorState, FEditHistory, pnlWorkspace);
+  FMapToolsPanel.OnCategoryChange := MapCategoryChanged;
   InitializeShortcuts;
   HistoryChanged(FEditHistory);
   EditorStateChanged(FEditorState);
@@ -457,23 +482,29 @@ begin
   FEditActionsUI.Menu.Button.Left := MulDiv(56, CurrentPPI, 96);
   pnlViewMenuButton.Left := MulDiv(92, CurrentPPI, 96);
   FFileMenu := TVectArtDarkPopupMenu.CreateForHosts(Self, Self, pnlMenuBar,
-    'ファイル', 0, 56, 220, 160);
-  FFileMenu.AddItem('地図を開く...    Ctrl+O', 0, FileOpenClick);
-  FFileMenu.AddItem('地図を保存...    Ctrl+S', 32, FileSaveClick);
-  FFileMenu.AddItem('SVG出力...', 64, ExportClick).Tag := 0;
-  FFileMenu.AddItem('PNG出力...', 96, ExportClick).Tag := 1;
-  FFileMenu.AddItem('新しい地図', 128, FileNewClick);
+    'ファイル', 0, 56, 260, 208);
+  FRecentMenu := TVectArtDarkPopupMenu.CreatePopup(Self, Self, 400, 32);
+  RebuildRecentMenu;
+  FFileMenu.AddItem('新規', 'Ctrl+N', 0, FileNewClick);
+  FFileMenu.AddItem('開く...', 'Ctrl+O', 32, FileOpenClick);
+  FFileMenu.AddItem('上書き保存', 'Ctrl+S', 64, FileSaveClick);
+  FFileMenu.AddItem('名前を付けて保存...', 'Ctrl+Shift+S', 96, FileSaveAsClick);
+  FFileMenu.AddSeparator(128, 8);
+  FFileMenu.AddSubMenu('最近使ったファイル', 136, FRecentMenu);
+  FFileMenu.AddSeparator(168, 8);
+  FFileMenu.AddItem('データの出力...', 'Ctrl+E', 176, ExportClick);
   FSavedRevision := FDocument.Revision;
   FMenuGroup.RegisterMenu(FFileMenu);
 end;
 
 function TMainForm.ConfirmSave: Boolean;
 begin
+  // 新規作成・読込・終了の前に未保存変更を保護し、保存が失敗した場合も処理を止める。
   Result := True;
   if (FDocument = nil) or (FDocument.Revision = FSavedRevision) then Exit;
   case MessageDlg('地図の変更を保存しますか？', mtConfirmation, [mbYes,mbNo,mbCancel],0) of
     mrCancel: Result := False;
-    mrYes: begin SaveDocumentAs; Result := FDocument.Revision = FSavedRevision; end;
+    mrYes: begin SaveDocument; Result := FDocument.Revision = FSavedRevision; end;
   end;
 end;
 function TMainForm.CloseQuery: Boolean;
@@ -503,22 +534,41 @@ begin
   finally Empty.Free; end;
 end;
 procedure TMainForm.ExportClick(Sender: TObject);
-var D: TSaveDialog; Ext: string;
+var D: TSaveDialog; Ext, FileName: string;
 begin
   FFileMenu.Close;
-  if TComponent(Sender).Tag = 0 then Ext := 'svg' else Ext := 'png';
   D := TSaveDialog.Create(Self);
   try
-    D.DefaultExt := Ext; D.Filter := UpperCase(Ext) + '|*.' + Ext;
-    D.FileName := '地図.' + Ext; D.Options := [ofOverwritePrompt, ofPathMustExist];
+    D.Title := 'データの出力';
+    D.DefaultExt := 'svg';
+    D.Filter := 'SVG (*.svg)|*.svg|PNG (*.png)|*.png';
+    D.FilterIndex := 1;
+    D.FileName := '地図';
+    D.OnTypeChange := ExportTypeChange;
+    D.Options := [ofOverwritePrompt, ofPathMustExist];
     if D.Execute then begin
       try
-        if Ext = 'svg' then ExportMapSvg(FDocument, D.FileName)
-        else ExportMapPng(FDocument, D.FileName);
-        lblStatus.Caption := '出力しました: ' + D.FileName;
+        FileName := D.FileName;
+        Ext := LowerCase(ExtractFileExt(FileName));
+        if Ext = '' then begin
+          if D.FilterIndex = 2 then Ext := '.png' else Ext := '.svg';
+          FileName := FileName + Ext;
+        end;
+        if Ext = '.svg' then ExportMapSvg(FDocument, FileName)
+        else if Ext = '.png' then ExportMapPng(FDocument, FileName)
+        else raise EConvertError.Create('拡張子は .svg または .png を指定してください。');
+        lblStatus.Caption := '出力しました: ' + FileName;
       except on E: Exception do ShowMessage('出力に失敗しました: ' + E.Message); end;
     end;
   finally D.Free; end;
+end;
+
+procedure TMainForm.ExportTypeChange(Sender: TObject);
+begin
+  if TSaveDialog(Sender).FilterIndex = 2 then
+    TSaveDialog(Sender).DefaultExt := 'png'
+  else
+    TSaveDialog(Sender).DefaultExt := 'svg';
 end;
 procedure TMainForm.FileOpenClick(Sender: TObject);
 begin
@@ -531,7 +581,63 @@ procedure TMainForm.FileSaveClick(Sender: TObject);
 begin
   if FFileMenu <> nil then
     FFileMenu.Close;
+  SaveDocument;
+end;
+
+procedure TMainForm.FileSaveAsClick(Sender: TObject);
+begin
+  if FFileMenu <> nil then FFileMenu.Close;
   SaveDocumentAs;
+end;
+
+procedure TMainForm.RecentFileClick(Sender: TObject);
+var Index: Integer;
+begin
+  if FFileMenu <> nil then FFileMenu.Close;
+  Index := TPanel(Sender).Tag;
+  if (FRecentFiles <> nil) and (Index >= 0) and
+    (Index < FRecentFiles.Count) then
+    LoadDocumentFile(FRecentFiles[Index]);
+end;
+
+procedure TMainForm.RebuildRecentMenu;
+var I: Integer; Item: TPanel;
+begin
+  if (FRecentMenu = nil) or (FRecentFiles = nil) then Exit;
+  FRecentMenu.ClearItems;
+  FRecentMenu.PopupHeight := Max(32, FRecentFiles.Count * 32);
+  if FRecentFiles.Count = 0 then begin
+    Item := FRecentMenu.AddItem('履歴はありません', 0, nil);
+    FRecentMenu.SetItemEnabled(Item, False);
+    Exit;
+  end;
+  for I := 0 to FRecentFiles.Count - 1 do begin
+    Item := FRecentMenu.AddItem(FRecentFiles[I], I * 32, RecentFileClick);
+    Item.Tag := I;
+    Item.Hint := FRecentFiles[I];
+    Item.ShowHint := True;
+  end;
+end;
+
+procedure TMainForm.RememberFile(const FileName: string);
+begin
+  if (FRecentFiles = nil) or (FileName = '') then Exit;
+  FRecentFiles.Touch(FileName);
+  // 履歴項目のClick中にその項目を解放しないよう、メニュー更新を次のUIメッセージへ送る。
+  PostMessage(Handle, WM_MAPRAKU_RECENT_REFRESH, 0, 0);
+  if not FindCmdLineSwitch('test', True) then
+    try
+      FRecentFiles.Save(FLayoutFileName);
+    except
+      on E: Exception do
+        lblStatus.Caption := '履歴の保存に失敗しました: ' + E.Message;
+    end;
+end;
+
+procedure TMainForm.WMRecentMenuRefresh(var Message: TMessage);
+begin
+  RebuildRecentMenu;
+  Message.Result := 0;
 end;
 
 procedure TMainForm.SetReferenceBackgroundRgba(const Pixels: TBytes;
@@ -568,8 +674,6 @@ begin
     FLayerFrame.RefreshFromDocument;
   if FObjectPropertiesFrame <> nil then
     FObjectPropertiesFrame.RefreshFromDocument;
-  if FToolPaletteFrame <> nil then
-    FToolPaletteFrame.RefreshState;
   if FMapToolsPanel <> nil then
     FMapToolsPanel.RefreshState;
   if FLineToolbar <> nil then
@@ -660,15 +764,34 @@ begin
     Key := 0;
     Exit;
   end;
+  if (FFileMenu <> nil) and (Key = Ord('N')) and (Shift = [ssCtrl]) then
+  begin
+    FileNewClick(Self);
+    Key := 0;
+    Exit;
+  end;
   if (FFileMenu <> nil) and (Key = Ord('O')) and (Shift = [ssCtrl]) then
   begin
-    LoadDocument;
+    FileOpenClick(Self);
     Key := 0;
     Exit;
   end;
   if (FFileMenu <> nil) and (Key = Ord('S')) and (Shift = [ssCtrl]) then
   begin
-    SaveDocumentAs;
+    FileSaveClick(Self);
+    Key := 0;
+    Exit;
+  end;
+  if (FFileMenu <> nil) and (Key = Ord('S')) and
+    (Shift = [ssCtrl, ssShift]) then
+  begin
+    FileSaveAsClick(Self);
+    Key := 0;
+    Exit;
+  end;
+  if (FFileMenu <> nil) and (Key = Ord('E')) and (Shift = [ssCtrl]) then
+  begin
+    ExportClick(Self);
     Key := 0;
     Exit;
   end;
@@ -699,116 +822,99 @@ begin
 end;
 
 procedure TMainForm.LoadDocument;
-var
-  ErrorMessage: string;
-  OpenDialog: TFileOpenDialog;
-  SkippedReferenceCount: Integer;
+var FileName: string;
 begin
-  if FDocument = nil then
-    Exit;
-  if not ConfirmSave then Exit;
-  OpenDialog := TFileOpenDialog.Create(Self);
+  if FDocument = nil then Exit;
   try
-    try
-      OpenDialog.Title := '地図を開く';
-      OpenDialog.DefaultExtension := 'mapraku';
-      OpenDialog.Options := [fdoFileMustExist, fdoPathMustExist,
-        fdoForceFileSystem];
-      with OpenDialog.FileTypes.Add do
-      begin
-        DisplayName := 'ちずらく地図 (*.mapraku)';
-        FileMask := '*.mapraku';
-      end;
-      OpenDialog.FileTypeIndex := 1;
-      if FCurrentDocumentFileName <> '' then
-      begin
-        OpenDialog.DefaultFolder := ExtractFilePath(
-          FCurrentDocumentFileName);
-        OpenDialog.FileName := ExtractFileName(FCurrentDocumentFileName);
-      end
-      else
-        OpenDialog.DefaultFolder := TPath.GetDocumentsPath;
-      if not OpenDialog.Execute(Handle) then
-        Exit;
-      if FEditorState <> nil then
-        FEditorState.OpenGroup := nil;
-      if not TryLoadVectArtDocumentFromJsonFile(OpenDialog.FileName,
-        FDocument, SkippedReferenceCount, ErrorMessage) then
-        raise EConvertError.Create(ErrorMessage);
-      FObjectPropertiesFrame.LoadColorHistory;
-      FCurrentDocumentFileName := OpenDialog.FileName;
-      FSavedRevision := FDocument.Revision;
-      FEditHistory.Clear;
-      Caption := 'MapRaku - ' +
-        ExtractFileName(FCurrentDocumentFileName);
-      if SkippedReferenceCount > 0 then
-        lblStatus.Caption := Format('Loaded: %s (%d missing references skipped)',
-          [FCurrentDocumentFileName, SkippedReferenceCount])
-      else
-        lblStatus.Caption := 'Loaded: ' + FCurrentDocumentFileName;
-    except
-      on E: Exception do
-      begin
-        lblStatus.Caption := 'Load error: ' + E.Message;
-        Application.MessageBox(PChar('JSONの読込に失敗しました。' +
-          sLineBreak + E.Message), 'MapRaku',
-          MB_OK or MB_ICONERROR);
-      end;
+    if ChooseMapFileToOpen(Self,Handle,FCurrentDocumentFileName,FileName) then
+      LoadDocumentFile(FileName);
+  except
+    on E: Exception do begin
+      lblStatus.Caption := 'Load error: ' + E.Message;
+      Application.MessageBox(PChar('JSONの読込に失敗しました。' +
+        sLineBreak + E.Message), 'MapRaku', MB_OK or MB_ICONERROR);
     end;
-  finally
-    OpenDialog.Free;
   end;
 end;
 
-procedure TMainForm.SaveDocumentAs;
+function TMainForm.LoadDocumentFile(const FileName: string): Boolean;
 var
-  SaveDialog: TFileSaveDialog;
+  ErrorMessage: string;
+  SkippedReferenceCount: Integer;
 begin
-  if FDocument = nil then
-    Exit;
-  SaveDialog := TFileSaveDialog.Create(Self);
+  Result := False;
+  // 履歴から開く場合も通常の読込と同じ保存確認を通す。
+  if (FDocument = nil) or not ConfirmSave then Exit;
   try
-    try
-      SaveDialog.Title := '地図を保存';
-      SaveDialog.DefaultExtension := 'mapraku';
-      if FCurrentDocumentFileName <> '' then
-      begin
-        SaveDialog.FileName := ExtractFileName(FCurrentDocumentFileName);
-        SaveDialog.DefaultFolder := ExtractFilePath(
-          FCurrentDocumentFileName);
-      end
-      else
-      begin
-        SaveDialog.FileName := '地図.mapraku';
-        SaveDialog.DefaultFolder := TPath.GetDocumentsPath;
-      end;
-      SaveDialog.Options := [fdoOverWritePrompt, fdoPathMustExist,
-        fdoForceFileSystem];
-      with SaveDialog.FileTypes.Add do
-      begin
-        DisplayName := 'ちずらく地図 (*.mapraku)';
-        FileMask := '*.mapraku';
-      end;
-      SaveDialog.FileTypeIndex := 1;
-      if not SaveDialog.Execute(Handle) then
-        Exit;
-      SaveMapFile(FDocument, SaveDialog.FileName);
-      FCurrentDocumentFileName := SaveDialog.FileName;
-      FSavedRevision := FDocument.Revision;
-      Caption := 'MapRaku - ' +
-        ExtractFileName(FCurrentDocumentFileName);
-      lblStatus.Caption := 'Saved: ' + SaveDialog.FileName;
-    except
-      on E: Exception do
-      begin
-        lblStatus.Caption := 'Save error: ' + E.Message;
-        Application.MessageBox(PChar('JSONの保存に失敗しました。' +
-          sLineBreak + E.Message), 'MapRaku',
-          MB_OK or MB_ICONERROR);
-      end;
+    if not TryLoadVectArtDocumentFromJsonFile(FileName, FDocument,
+      SkippedReferenceCount, ErrorMessage) then
+      raise EConvertError.Create(ErrorMessage);
+    if FEditorState <> nil then FEditorState.OpenGroup := nil;
+    FObjectPropertiesFrame.LoadColorHistory;
+    FCurrentDocumentFileName := ExpandFileName(FileName);
+    FSavedRevision := FDocument.Revision;
+    FEditHistory.Clear;
+    Caption := 'MapRaku - ' + ExtractFileName(FCurrentDocumentFileName);
+    if SkippedReferenceCount > 0 then
+      lblStatus.Caption := Format('Loaded: %s (%d missing references skipped)',
+        [FCurrentDocumentFileName, SkippedReferenceCount])
+    else
+      lblStatus.Caption := 'Loaded: ' + FCurrentDocumentFileName;
+    RememberFile(FCurrentDocumentFileName);
+    Result := True;
+  except
+    on E: Exception do begin
+      lblStatus.Caption := 'Load error: ' + E.Message;
+      Application.MessageBox(PChar('JSONの読込に失敗しました。' +
+        sLineBreak + E.Message), 'MapRaku', MB_OK or MB_ICONERROR);
     end;
-  finally
-    SaveDialog.Free;
+  end;
+end;
+
+procedure TMainForm.SaveDocument;
+begin
+  if FCurrentDocumentFileName = '' then SaveDocumentAs
+  else SaveDocumentFile(FCurrentDocumentFileName);
+end;
+
+procedure TMainForm.SaveDocumentAs;
+var FileName: string;
+begin
+  if FDocument = nil then Exit;
+  try
+    if ChooseMapFileToSave(Self,Handle,FCurrentDocumentFileName,FileName) then
+      SaveDocumentFile(FileName);
+  except
+    on E: Exception do begin
+      lblStatus.Caption := 'Save error: ' + E.Message;
+      Application.MessageBox(PChar('JSONの保存に失敗しました。' +
+        sLineBreak + E.Message), 'MapRaku', MB_OK or MB_ICONERROR);
+    end;
+  end;
+end;
+
+function TMainForm.SaveDocumentFile(const FileName: string): Boolean;
+var TargetName: string;
+begin
+  Result := False;
+  if FDocument = nil then Exit;
+  try
+    TargetName := FileName;
+    if ExtractFileExt(TargetName) = '' then TargetName := TargetName + '.mapraku';
+    SaveMapFile(FDocument, TargetName);
+    // 成功後にのみ現在の保存先と保存済みリビジョンを更新する。
+    FCurrentDocumentFileName := ExpandFileName(TargetName);
+    FSavedRevision := FDocument.Revision;
+    Caption := 'MapRaku - ' + ExtractFileName(FCurrentDocumentFileName);
+    lblStatus.Caption := 'Saved: ' + FCurrentDocumentFileName;
+    RememberFile(FCurrentDocumentFileName);
+    Result := True;
+  except
+    on E: Exception do begin
+      lblStatus.Caption := 'Save error: ' + E.Message;
+      Application.MessageBox(PChar('JSONの保存に失敗しました。' +
+        sLineBreak + E.Message), 'MapRaku', MB_OK or MB_ICONERROR);
+    end;
   end;
 end;
 
@@ -855,9 +961,6 @@ begin
   if Sender = FLayerMenuItem then
     FDockManager.SetToolVisible(FLayerFrame,
       not FDockManager.ToolVisible(FLayerFrame))
-  else if Sender = FToolPaletteMenuItem then
-    FDockManager.SetToolVisible(FToolPaletteFrame,
-      not FDockManager.ToolVisible(FToolPaletteFrame))
   else if Sender = FObjectPropertiesMenuItem then
     FDockManager.SetToolVisible(FObjectPropertiesFrame,
       not FDockManager.ToolVisible(FObjectPropertiesFrame));
@@ -879,6 +982,7 @@ begin
   if FFileDropCaptionEnabled then
     DragAcceptFiles(Handle, False);
   SaveLayoutSettings;
+  FreeAndNil(FRecentFiles);
   FreeAndNil(FShortcuts);
   FreeAndNil(FGeometryPopup);
   FGeometryPopupFrame := nil;
@@ -892,8 +996,6 @@ begin
     FLayerFrame.Context := nil;
   if FObjectPropertiesFrame <> nil then
     FObjectPropertiesFrame.Context := nil;
-  if FToolPaletteFrame <> nil then
-    FToolPaletteFrame.Context := nil;
   FDesignerContext := nil;
   if FEditorState <> nil then
     FEditorState.OnChanged := nil;
@@ -1285,8 +1387,6 @@ procedure TMainForm.UpdateToolMenuItems;
 begin
   FLayerMenuItem.Caption := CheckedMenuCaption(
     FDockManager.ToolVisible(FLayerFrame), 'Layers');
-  FToolPaletteMenuItem.Caption := CheckedMenuCaption(
-    FDockManager.ToolVisible(FToolPaletteFrame), 'Tools');
   FObjectPropertiesMenuItem.Caption := CheckedMenuCaption(
     FDockManager.ToolVisible(FObjectPropertiesFrame), 'Object Properties');
 end;

@@ -39,7 +39,7 @@ function BuildPathSelectionGeometry(const LayerRect: TRect;
   FrameOffset: Integer = 8): TVectArtSelectionGeometry;
 // 単線の端点から選択ハンドルを離す固定距離を返す。
 function LineSelectionHandleDistance: Integer;
-// 指定位置にあるリサイズハンドルを返し、該当しない場合はvshNoneを返す。
+// ハンドルまたは選択枠の辺からリサイズ方向を返す。
 function HitTestSelectionHandle(const Point: TPoint;
   const Geometry: TVectArtSelectionGeometry): TVectArtSelectionHandle;
 // 指定位置が上辺中央の回転マーク内ならTrueを返す。
@@ -56,12 +56,13 @@ uses
   System.Math, Vcl.Forms, Winapi.Windows;
 
 const
-  SELECTION_FRAME_OFFSET = 8;
+  SELECTION_FRAME_OFFSET = 6;
   SELECTION_HANDLE_SIZE = 8;
   PRIMARY_ROTATION_HANDLE_SIZE = 18;
   PRIMARY_ROTATION_HANDLE_OFFSET = 30;
   LINE_HANDLE_GAP = 6;
-  HANDLE_HIT_PADDING = 3; // 白い外周を含む表示全体とポインター判定を一致させる画面px。
+  HANDLE_HIT_PADDING = 1; // 見えているハンドルの近傍だけを操作対象にする。
+  FRAME_HIT_DISTANCE = 2; // 選択枠の線をドラッグできる画面px。
   CR_VECTART_ROTATE = 101;
 
 var
@@ -411,8 +412,10 @@ end;
 function HitTestSelectionHandle(const Point: TPoint;
   const Geometry: TVectArtSelectionGeometry): TVectArtSelectionHandle;
 var
+  DX, DY, LengthSquared, Projection, TestX, TestY: Single;
   Handle: TVectArtSelectionHandle;
   HitRect: TRect;
+  I: Integer;
 begin
   for Handle := vshTopLeft to vshLeft do
   begin
@@ -422,6 +425,38 @@ begin
     InflateRect(HitRect, HANDLE_HIT_PADDING, HANDLE_HIT_PADDING);
     if PtInRect(HitRect, Point) then
       Exit(Handle);
+  end;
+  if Geometry.DrawFrame then
+  begin
+    // Path系は角ハンドルを描かないが、枠の角では二軸変形を優先する。
+    for I := 0 to 3 do
+      if Hypot(Point.X-Geometry.FramePoints[I].X,
+        Point.Y-Geometry.FramePoints[I].Y) <= FRAME_HIT_DISTANCE then
+        case I of
+          0: Exit(vshTopLeft);
+          1: Exit(vshTopRight);
+          2: Exit(vshBottomRight);
+          3: Exit(vshBottomLeft);
+        end;
+    for I := 0 to 3 do
+    begin
+      DX := Geometry.FramePoints[I+1].X - Geometry.FramePoints[I].X;
+      DY := Geometry.FramePoints[I+1].Y - Geometry.FramePoints[I].Y;
+      LengthSquared := DX*DX + DY*DY;
+      if LengthSquared <= 0 then
+        Continue;
+      Projection := EnsureRange(((Point.X-Geometry.FramePoints[I].X)*DX +
+        (Point.Y-Geometry.FramePoints[I].Y)*DY)/LengthSquared,0.0,1.0);
+      TestX := Geometry.FramePoints[I].X + Projection*DX;
+      TestY := Geometry.FramePoints[I].Y + Projection*DY;
+      if Hypot(Point.X-TestX,Point.Y-TestY) <= FRAME_HIT_DISTANCE then
+        case I of
+          0: Exit(vshTop);
+          1: Exit(vshRight);
+          2: Exit(vshBottom);
+          3: Exit(vshLeft);
+        end;
+    end;
   end;
   Result := vshNone;
 end;

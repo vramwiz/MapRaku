@@ -2,6 +2,8 @@
 unit MapRakuSymbols;
 interface
 uses System.Types, MapRakuDocument, MapRakuEditHistory;
+function MapSymbolDefaultLabel(Kind: Integer): string;
+function CreateMapSymbol(Kind: Integer; const LabelText: string): TMapRakuGroupLayer;
 procedure InsertMapSymbol(Document: TVectArtDocument; History: TVectArtEditHistory;
   Kind: Integer; const LabelText: string);
 procedure PlaceMapSymbol(Document: TVectArtDocument; History: TVectArtEditHistory;
@@ -35,6 +37,20 @@ begin
     X+(W+Layout.Width)*0.5,Y+(H+Layout.Height)*0.5);
   G.AddChild(T);
 end;
+function MapSymbolDefaultLabel(Kind: Integer): string;
+begin
+  case Kind of
+    0: Result := '駅';
+    1: Result := '信号';
+    2: Result := '横断歩道';
+    3: Result := '歩道橋';
+    4,7: Result := '1';
+    5: Result := '駐車場';
+    6: Result := '方位';
+    9: Result := '矢印';
+  else Result := '';
+  end;
+end;
 constructor TSymbolInsert.Create(Document: TVectArtDocument; Symbol: TMapRakuGroupLayer);
 begin inherited Create; FDocument := Document; FSymbol := Symbol; FIndex := Document.LayerCount; end;
 destructor TSymbolInsert.Destroy;
@@ -43,50 +59,60 @@ procedure TSymbolInsert.Execute;
 begin FDocument.InsertLayer(FIndex, FSymbol); FApplied := True; FDocument.SetSelectedLayers([FIndex]); end;
 procedure TSymbolInsert.Undo;
 begin FDocument.ExtractLayer(FIndex); FApplied := False; end;
-procedure PlaceMapSymbol(Document: TVectArtDocument; History: TVectArtEditHistory;
-  Kind: Integer; const LabelText: string; Position: TPointF; Snap: Boolean);
-var G: TMapRakuGroupLayer; C: TSymbolInsert; I: Integer; P,T: TPointF; Path: TVectArtPathLayer; Bounds: TRectF;
+function CreateMapSymbol(Kind: Integer; const LabelText: string): TMapRakuGroupLayer;
+var I: Integer;
 begin
-  G := TMapRakuGroupLayer.Create(LabelText);
-  G.MapSymbol := True;
+  Result := TMapRakuGroupLayer.Create(LabelText);
+  Result.MapSymbol := True;
+  try
   case Kind of
     0: begin
-      Box(G,-62,-18,124,36,clBlack); Box(G,-60,-16,120,32,clWhite);
-      Text(G,LabelText,-48,-13,96,26,clBlack);
+      Box(Result,-62,-18,124,36,clBlack); Box(Result,-60,-16,120,32,clWhite);
+      Text(Result,LabelText,-48,-13,96,26,clBlack);
     end;
     1: begin
-      Box(G,-30,-12,60,24,$00404040);
-      Circle(G,-19,0,8,clLime); Circle(G,0,0,8,clYellow); Circle(G,19,0,8,clRed);
+      Box(Result,-30,-12,60,24,$00404040);
+      Circle(Result,-19,0,8,clLime); Circle(Result,0,0,8,clYellow); Circle(Result,19,0,8,clRed);
     end;
     2: begin
-      Box(G,-25,-18,50,36,$00606060);
-      for I := 0 to 5 do Box(G,-23+I*8,-18,4,36,clWhite);
+      Box(Result,-25,-18,50,36,$00606060);
+      for I := 0 to 5 do Box(Result,-23+I*8,-18,4,36,clWhite);
     end;
     3: begin
-      Box(G,-50,-8,100,16,$00808080); Box(G,-48,-6,96,12,clWhite);
+      Box(Result,-50,-8,100,16,$00808080); Box(Result,-48,-6,96,12,clWhite);
       for I := 0 to 6 do begin
-        Box(G,-50,-8+I*4,16,2,clBlack); Box(G,34,-8+I*4,16,2,clBlack);
+        Box(Result,-50,-8+I*4,16,2,clBlack); Box(Result,34,-8+I*4,16,2,clBlack);
       end;
     end;
     4: begin
-      Circle(G,0,0,18,clYellow); Circle(G,0,0,15,clRed);
-      Text(G,LabelText,-10,-12,20,24,clWhite);
+      Circle(Result,0,0,18,clYellow); Circle(Result,0,0,15,clRed);
+      Text(Result,LabelText,-10,-12,20,24,clWhite);
     end;
     5: begin
-      Box(G,-17,-17,34,34,$00D08020);
-      Text(G,'P',-10,-15,20,30,clWhite);
+      Box(Result,-17,-17,34,34,$00D08020);
+      Text(Result,'P',-10,-15,20,30,clWhite);
     end;
     6: begin
-      Text(G,'↑',-15,-25,30,40,clBlack); Text(G,'北',-10,14,20,20,clBlack);
+      Text(Result,'↑',-15,-25,30,40,clBlack); Text(Result,'北',-10,14,20,20,clBlack);
     end;
     7: begin
-      Box(G,-24,-15,48,30,$00CC8822); Text(G,LabelText,-20,-12,40,24,clWhite);
+      Box(Result,-24,-15,48,30,$00CC8822); Text(Result,LabelText,-20,-12,40,24,clWhite);
     end;
     8: begin
-      Circle(G,0,0,40,$00E8BC48);
+      Circle(Result,0,0,40,$00E8BC48);
     end;
-    9: Text(G,'→',-30,-15,60,30,clRed);
+    9: Text(Result,'→',-30,-15,60,30,clRed);
   end;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+procedure PlaceMapSymbol(Document: TVectArtDocument; History: TVectArtEditHistory;
+  Kind: Integer; const LabelText: string; Position: TPointF; Snap: Boolean);
+var G: TMapRakuGroupLayer; C: TSymbolInsert; P,T: TPointF; Path: TVectArtPathLayer; Bounds: TRectF;
+begin
+  G := CreateMapSymbol(Kind, LabelText);
   if Snap and (Kind in [0,1,2,3]) and NearestMapPath(Document,Position,32,False,'',P,T,Path) then begin
     Position := P;
     if (Kind in [2,3]) and TryGetMapRakuLayerBounds(G,Bounds) then

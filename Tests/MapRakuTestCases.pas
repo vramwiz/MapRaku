@@ -5,13 +5,17 @@ procedure RunMapTests;
 implementation
 uses System.SysUtils, System.Types, System.Classes, System.IOUtils, System.JSON,
   System.Skia, System.UITypes, System.Math,
-  Vcl.Forms, Vcl.Controls, Vcl.Graphics, Vcl.Imaging.pngimage,
+  Vcl.Forms, Vcl.Controls, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics,
+  Vcl.Imaging.pngimage,
   TextRendererSkiaRuntime, TextRendererSkiaBootstrap,
   MapRakuDocument, MapRakuDocumentJson, MapRakuEditHistory, MapRakuEditorState,
   MapRakuMapCommands, MapRakuCrossings, MapRakuGroupCommands, MapRakuRenderer, MapRakuShapeCreation,
-  MapRakuExport, MapRakuTheme, MapRakuSymbols, MapRakuFile, MapRakuPathSnap,
+  MapRakuExport, MapRakuTheme, MapRakuSymbols, MapRakuMapPanel,
+  MapRakuFile, MapRakuPathSnap,
   MapRakuTextGeometry, MapRakuMainForm, MapRakuPathEditor, MapRakuPathOperations,
-  MapRakuProjectiveTransform, MapRakuTestSupport, MapRakuConnectionTests, MapRakuCrossingTests;
+  MapRakuRecentFiles,
+  MapRakuProjectiveTransform, MapRakuSelectionGeometry, MapRakuTestSupport,
+  MapRakuConnectionTests, MapRakuCrossingTests;
 type
   TTestExceptionSink = class
     procedure HandleException(Sender: TObject; E: Exception);
@@ -35,10 +39,93 @@ var D, Restored, CrossingDoc, ColorDoc, ColorRestored, PaletteDoc: TVectArtDocum
   PlainSvg: string;
   CrossingImageHash,PlainImageHash: UInt64;
   FromSelectedObject: Boolean;
+  SymbolLayer: TMapRakuGroupLayer;
+  PixelIndex: Integer;
+  HasSymbolPixels: Boolean;
+  SelectionGeometry: TVectArtSelectionGeometry;
+  PanelDoc: TVectArtDocument;
+  PanelState: TVectArtEditorState;
+  PanelForm: TForm;
+  Panel: TMapToolsPanel;
+  CategoryBox: TComboBox;
+  Gallery: TScrollBox;
+  FirstPresetButton: TMapPresetButton;
+  WheelHandled: Boolean;
+  RecentFiles, ReloadedRecentFiles: TMapRakuRecentFiles;
+  RecentIni, MovedRecentFile: string;
 begin
   ExceptionSink := TTestExceptionSink.Create;
   Application.OnException := ExceptionSink.HandleException;
   TTextRendererSkiaRuntime.Acquire(BundledSkiaRuntimeFileName);
+  TDirectory.CreateDirectory('TestOutput');
+  RecentIni := TPath.GetFullPath('TestOutput/recent-files-test.ini');
+  RecentFiles := TMapRakuRecentFiles.Create;
+  ReloadedRecentFiles := TMapRakuRecentFiles.Create;
+  try
+    for I := 0 to 11 do
+      RecentFiles.Touch(TPath.Combine('TestOutput',
+        'recent-' + IntToStr(I) + '.mapraku'));
+    Check((RecentFiles.Count = 10) and
+      RecentFiles[0].EndsWith('recent-11.mapraku'),
+      'Recent files must keep the latest ten');
+    MovedRecentFile := RecentFiles[5];
+    RecentFiles.Touch(MovedRecentFile);
+    Check((RecentFiles.Count = 10) and
+      SameText(RecentFiles[0], MovedRecentFile),
+      'Opening a recent file must move it to the top');
+    RecentFiles.Save(RecentIni);
+    ReloadedRecentFiles.Load(RecentIni);
+    Check((ReloadedRecentFiles.Count = 10) and
+      SameText(ReloadedRecentFiles[0], MovedRecentFile),
+      'Recent files must survive application restart');
+  finally
+    RecentFiles.Free;
+    ReloadedRecentFiles.Free;
+    if TFile.Exists(RecentIni) then TFile.Delete(RecentIni);
+  end;
+  SelectionGeometry := BuildSelectionGeometry(Rect(100,100,200,180),
+    SelectionFrameOffset(0,1));
+  Check(HitTestSelectionHandle(Point(94,135),SelectionGeometry)=vshLeft,
+    'Selection frame edge must resize');
+  Check(HitTestSelectionHandle(Point(100,135),SelectionGeometry)=vshNone,
+    'Object edge must not resize');
+  Check(HitTestSelectionHandle(Point(94,94),SelectionGeometry)=vshTopLeft,
+    'Selection frame corner must resize');
+  PanelForm:=TForm.CreateNew(nil);
+  PanelForm.SetBounds(0,0,500,400);
+  PanelDoc:=TVectArtDocument.Create;
+  PanelState:=TVectArtEditorState.Create;
+  try
+    Panel:=TMapToolsPanel.CreateTools(PanelForm,PanelDoc,PanelState,nil,PanelForm);
+    CategoryBox:=nil; Gallery:=nil;
+    for I:=0 to Panel.ControlCount-1 do begin
+      if Panel.Controls[I] is TComboBox then CategoryBox:=TComboBox(Panel.Controls[I]);
+      if Panel.Controls[I] is TScrollBox then Gallery:=TScrollBox(Panel.Controls[I]);
+    end;
+    Check((CategoryBox<>nil) and (Gallery<>nil),'Placement category controls');
+    Check((CategoryBox.ItemIndex=0) and (Gallery.ControlCount>40) and
+      (PanelState.ActiveMapPreset=0) and (PanelState.MapElement='road'),
+      'All category must show every preset and activate the first');
+    FirstPresetButton:=nil;
+    for I:=0 to Gallery.ControlCount-1 do
+      if Gallery.Controls[I] is TMapPresetButton then begin
+        FirstPresetButton:=TMapPresetButton(Gallery.Controls[I]);
+        Break;
+      end;
+    Check(FirstPresetButton<>nil,'Placement preset button');
+    WheelHandled:=False;
+    FirstPresetButton.OnMouseWheel(FirstPresetButton,[],-120,
+      Point(0,0),WheelHandled);
+    Check(WheelHandled and (Gallery.VertScrollBar.Position>0) and
+      (PanelState.ActiveMapPreset=0),
+      'Wheel over a preset must scroll the gallery');
+    CategoryBox.ItemIndex:=2;
+    CategoryBox.OnChange(CategoryBox);
+    Check((PanelState.ActiveMapPreset=10) and (PanelState.MapElement='jr'),
+      'Rail category must activate its first preset');
+  finally
+    PanelForm.Free; PanelState.Free; PanelDoc.Free;
+  end;
   CheckEndpointConnections;
   WriteConnectionExamples;
   CheckJoinedBridges;
@@ -79,6 +166,16 @@ begin
       Check((TVectArtPathLayer(ColorDoc[ColorDoc.LayerCount-1]).StrokeColor =
         clRed) and TVectArtPathLayer(ColorDoc[ColorDoc.LayerCount-1]).MapColorOverride,
         'New road must inherit selected custom color');
+      Check((S.CurrentTool = vetLine) and (ColorDoc.SelectionCount = 0),
+        'Road placement must continue without selecting the completed road');
+      Check(Creation.MouseDown(mbLeft,[],100,130),'Second custom road start');
+      Check(Creation.MouseUp(mbLeft,[],200,130),'Second custom road finish');
+      Check((TVectArtPathLayer(ColorDoc[ColorDoc.LayerCount-1]).StrokeColor =
+        clRed) and TVectArtPathLayer(ColorDoc[ColorDoc.LayerCount-1]).MapColorOverride,
+        'Continued road placement must retain the inherited color');
+      S.SetMapPlacementColor(clBlue);
+      Check((S.MapPlacementColor(ColorDoc,FromSelectedObject) = clBlue) and
+        not FromSelectedObject,'Picker color must replace inherited placement color');
       ColorDoc.SetSelectedLayers([1]);
       S.CurrentTool := vetLine;
       S.MapElement := 'river';
@@ -355,14 +452,30 @@ begin
     H.Redo; Check(D[2] is TMapRakuLevelBoundaryLayer,'Boundary redo');
     ApplyMapTheme(D,H,True); Check(D.CanvasLayer.BackgroundColor=clBlack,'Dark theme');
     H.Undo; Check(D.CanvasLayer.BackgroundColor=clWhite,'Theme undo'); H.Redo;
-    for I := 0 to 9 do begin InsertMapSymbol(D,H,I,IntToStr(I+1)); H.Undo; end;
+    for I := 0 to 9 do begin
+      SymbolLayer := CreateMapSymbol(I, MapSymbolDefaultLabel(I));
+      try
+        RenderVectArtLayerThumbnail(SymbolLayer, Buffer, 64, 42);
+        HasSymbolPixels := False;
+        for PixelIndex := 0 to Buffer.PixelCount - 1 do
+          if Buffer.Pixels[PixelIndex].A <> 0 then begin
+            HasSymbolPixels := True;
+            Break;
+          end;
+        Check(HasSymbolPixels, 'Empty symbol thumbnail: '+IntToStr(I));
+      finally
+        SymbolLayer.Free;
+      end;
+      InsertMapSymbol(D,H,I,IntToStr(I+1)); H.Undo;
+    end;
     S.MapElement := 'jr'; S.CurrentTool := vetPath; S.LineStrokeWidth := 12;
     Creation.Configure(D,H,S,Rect(0,0,800,600),1);
     Creation.MouseDown(mbLeft,[],100,200); Creation.MouseDown(mbLeft,[],240,200);
     S.NextVertexKind := slvkBezier;
     Creation.MouseDown(mbLeft,[],350,150);
     Check(Creation.FinishPath(False),'Path finish');
-    Check(S.CurrentTool=vetSelect,'Map tool must deselect');
+    Check(S.CurrentTool=vetPath,'Map tool must remain active');
+    Check(D.SelectionCount=0,'Continued placement must not select a layer');
     Check(TVectArtPathLayer(D[D.LayerCount-1]).MapElement='jr','Rail kind lost');
     R := Road('river',PointF(-250,-250),PointF(180,220)); InsertMapPath(D,H,R);
     InsertMapSymbol(D,H,0,'千里丘');

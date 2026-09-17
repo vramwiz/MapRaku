@@ -63,6 +63,7 @@ type
       out FromSelectedObject: Boolean): TColor;
     procedure BeginMapPlacement(Document: TVectArtDocument);
     procedure EndMapPlacement;
+    procedure SetMapPlacementColor(const Value: TColor);
     function GetOpenGroupChildren: TArray<TVectArtLayer>;
     function IsGroupInOpenPath(Group: TMapRakuGroupLayer): Boolean;
     function IsOpenGroupChildSelected(Layer: TVectArtLayer): Boolean;
@@ -261,6 +262,8 @@ end;
 
 procedure TVectArtEditorState.BeginMapPlacement(Document: TVectArtDocument);
 begin
+  // 連続配置では最初に引き継いだ色を、選択解除後の次の1本にも使う。
+  if FMapPlacementActive and (FMapPlacementKind = FMapElement) then Exit;
   FMapPlacementActive := False;
   FMapPlacementKind := FMapElement;
   FMapPlacementColor := MapPlacementColor(Document,FMapPlacementOverride);
@@ -270,6 +273,15 @@ end;
 procedure TVectArtEditorState.EndMapPlacement;
 begin
   FMapPlacementActive := False;
+end;
+
+procedure TVectArtEditorState.SetMapPlacementColor(const Value: TColor);
+begin
+  FMapPlacementColor := Value;
+  FMapPlacementOverride := False;
+  FMapPlacementKind := FMapElement;
+  FMapPlacementActive := True;
+  CreationColor := Value;
 end;
 
 destructor TVectArtEditorState.Destroy;
@@ -733,7 +745,10 @@ begin
     Exit;
   FCurrentTool := Value;
   if Value = vetSelect then
+  begin
     FActiveMapPreset := -1;
+    FMapPlacementActive := False;
+  end;
   if Value <> vetSelect then
   begin
     FSelectedFilter := nil;

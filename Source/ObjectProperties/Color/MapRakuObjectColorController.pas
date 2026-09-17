@@ -191,7 +191,6 @@ var
   OldStyle: TMapRakuPaintStyle;
   StopId: Integer;
   Target: TMapRakuLayerColorTarget;
-  FromSelectedObject: Boolean;
 begin
   if FRefreshing or FUpdatingColor or (FContext = nil) or
     (FContext.Document = nil) then
@@ -202,10 +201,9 @@ begin
     ((FContext.EditorState.MapElement = 'road') or
      (FContext.EditorState.MapElement = 'river')) then
   begin
-    FContext.EditorState.MapPlacementColor(Document,FromSelectedObject);
-    if FromSelectedObject then Exit;
     SetMapPlacementPreset(Document,FContext.EditHistory,
       FContext.EditorState.MapElement,NewColor);
+    FContext.EditorState.SetMapPlacementColor(NewColor);
     if Assigned(FOnChanged) then FOnChanged(Self);
     Exit;
   end;
@@ -687,10 +685,10 @@ begin
         ColorValue := FContext.EditorState.MapPlacementColor(
           FContext.Document,FromSelectedObject);
         if FromSelectedObject then
-          FFrame.TargetCaption := '選択中の経路の色で配置'
+          FFrame.TargetCaption := '引き継いだ配置色'
         else
           FFrame.TargetCaption := '道路・川の配置色';
-        FFrame.ColorEnabled := not FromSelectedObject;
+        FFrame.ColorEnabled := True;
         FFrame.OpacityEnabled := False;
         FUpdatingColor := True;
         try

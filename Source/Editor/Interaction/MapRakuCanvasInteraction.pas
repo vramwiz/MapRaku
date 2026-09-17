@@ -188,6 +188,9 @@ type
       const ACanvasBounds: TRect; AZoom: Single);
     // 現在位置で開始できる編集操作に対応したカーソルを返す。
     function CursorAt(X, Y: Integer): TCursor;
+    // 描画と入力判定が同じ選択枠を参照するための画面座標ジオメトリ。
+    function CurrentSelectionGeometry(
+      out Geometry: TVectArtSelectionGeometry): Boolean;
     // 拡張当たり判定内のベジェ制御点を返す。
     function BezierHandleAt(X, Y: Integer): TMapRakuBezierHandleKind;
     // 画面座標の最前面にある表示レイヤーを返し、該当しなければ-1を返す。
@@ -1022,12 +1025,8 @@ begin
       Exit(RoundedCornerCursor(CornerHandle.Corner));
   if FTextPathCharacterInteraction.CursorAt(X, Y, VertexCursor) then
     Exit(VertexCursor);
-  SelectionRect := SelectedLayersScreenRect;
-  if not SelectionRect.IsEmpty and not SelectionContainsLockedLayer then
+  if CurrentSelectionGeometry(Geometry) and not SelectionContainsLockedLayer then
   begin
-    if not SelectedLayerSelectionGeometry(Geometry) then
-      Geometry := BuildSelectionGeometry(SelectionRect,
-        SelectedLayersFrameOffset);
     if not FAxisAlignedSelection and (FDocument.SelectionCount = 1) and
       ((FDocument[FDocument.SelectedIndex] is TMapRakuGroupLayer) or
        (FDocument[FDocument.SelectedIndex] is TMapRakuRectangleLineLayer) or
@@ -2340,6 +2339,19 @@ begin
     end;
 end;
 
+function TVectArtCanvasInteraction.CurrentSelectionGeometry(
+  out Geometry: TVectArtSelectionGeometry): Boolean;
+var SelectionRect: TRect;
+begin
+  SelectionRect := SelectedLayersScreenRect;
+  Result := not SelectionRect.IsEmpty;
+  if not Result then
+    Exit;
+  if not SelectedLayerSelectionGeometry(Geometry) then
+    Geometry := BuildSelectionGeometry(SelectionRect,
+      SelectedLayersFrameOffset);
+end;
+
 function TVectArtCanvasInteraction.SelectedLayerSelectionGeometry(
   out Geometry: TVectArtSelectionGeometry): Boolean;
 var
@@ -2359,7 +2371,8 @@ begin
     TryGetMapRakuLayerQuad(FDocument[FDocument.SelectedIndex], TransformQuad) then
   begin
     for I := 0 to 3 do ScreenQuad[I] := Point(ToScreenX(TransformQuad[I].X),ToScreenY(TransformQuad[I].Y));
-    Geometry := BuildRotatedSelectionGeometry(ScreenQuad,8); Exit(True);
+    Geometry := BuildRotatedSelectionGeometry(ScreenQuad,
+      SelectedLayersFrameOffset); Exit(True);
   end;
   if (FDocument <> nil) and (FDocument.SelectionCount = 1) and
     (FDocument.SelectedIndex > 0) and
@@ -2441,7 +2454,7 @@ begin
     else
       Geometry := BuildPathSelectionGeometry(
         LayerScreenRect(FDocument.SelectedIndex),
-        SelectionFrameOffset(0, FZoom));
+        SelectedLayersFrameOffset);
     Exit(True);
   end;
   if FAxisAlignedSelection then
@@ -2515,7 +2528,6 @@ var
   RadiusHandleRect: TRect;
   RoundedBounds: TRectF;
   RoundedRotation: Single;
-  SelectionRect: TRect;
   ShapeBounds: TRectF;
   ShapeLayer: TMapRakuShapeLayer;
   TextLayer: TMapRakuTextLayer;
@@ -2554,12 +2566,8 @@ begin
     (FDocument[FDocument.SelectedIndex] is TMapRakuTextLayer) and
     not FDocument[FDocument.SelectedIndex].Locked then
   begin
-    SelectionRect := SelectedLayersScreenRect;
-    if not SelectionRect.IsEmpty then
+    if CurrentSelectionGeometry(Geometry) then
     begin
-      if not SelectedLayerSelectionGeometry(Geometry) then
-        Geometry := BuildSelectionGeometry(SelectionRect,
-          SelectedLayersFrameOffset);
       CtrlTextResize := HitTestSelectionHandle(Point(X, Y), Geometry) <>
         vshNone;
     end;
@@ -2730,12 +2738,8 @@ begin
       Exit(True);
     end;
   end;
-  SelectionRect := SelectedLayersScreenRect;
-  if not SelectionRect.IsEmpty and not SelectionContainsLockedLayer then
+  if CurrentSelectionGeometry(Geometry) and not SelectionContainsLockedLayer then
   begin
-    if not SelectedLayerSelectionGeometry(Geometry) then
-      Geometry := BuildSelectionGeometry(SelectionRect,
-        SelectedLayersFrameOffset);
     if not FAxisAlignedSelection and (FDocument.SelectionCount = 1) and
       HitTestRotationHandle(Point(X, Y), Geometry) and
       ((FDocument[FDocument.SelectedIndex] is TMapRakuGroupLayer) or

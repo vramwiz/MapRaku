@@ -53,6 +53,8 @@ type
     FRenderCache: TMapRakuCanvasRenderCache; // 文書画像、移動プレビュー、ズーム再利用を所有する。
     FShapeCreation: TVectArtShapeCreation;
     FMapPathEditor: TMapPathEditor;
+    FLastPlacedLayerIndex: Integer;
+    FLastPlacedLayer: TVectArtLayer;
     FSkipTextDblClick: Boolean;
     FTextBeforeSelection: TArray<Integer>;
     FTextBuffer: string;
@@ -167,6 +169,8 @@ type
     function TransformDragging: Boolean;
     // 変形前の状態へ戻してマウスキャプチャを解放する。
     procedure CancelTransformDrag;
+    // 配置先の分類を変える場合も右クリックと同じ規則で配置を終了する。
+    procedure EndPlacement;
     // 文字入力中はホスト側のオブジェクト編集ショートカットを抑止する。
     property TextEditing: Boolean read FTextEditing;
     property CanvasBounds: TRect read FCanvasBounds;
@@ -1677,6 +1681,41 @@ begin
   if Result then Invalidate;
 end;
 
+procedure TVectArtCanvasControl.EndPlacement;
+var
+  LayerCountBefore: Integer;
+begin
+  if (FDocument = nil) or (FEditorState = nil) or
+    ((FEditorState.CurrentTool = vetSelect) and
+     (FEditorState.PendingSymbol < 0)) then Exit;
+  LayerCountBefore := FDocument.LayerCount;
+  CalculateCanvasBounds;
+  FShapeCreation.Configure(FDocument, EditHistory, FEditorState,
+    FCanvasBounds, FZoom);
+  if FShapeCreation.Active then
+  begin
+    if not FShapeCreation.FinishPath(
+      FEditorState.CurrentTool = vetShape) then
+      FShapeCreation.CancelPath;
+    if FDocument.LayerCount > LayerCountBefore then
+    begin
+      FLastPlacedLayerIndex := FDocument.LayerCount - 1;
+      FLastPlacedLayer := FDocument[FLastPlacedLayerIndex];
+    end;
+  end;
+  FEditorState.CurrentTool := vetSelect;
+  FEditorState.PendingSymbol := -1;
+  FEditorState.ActiveMapPreset := -1;
+  FEditorState.MapElement := '';
+  if (FLastPlacedLayerIndex > 0) and
+     (FLastPlacedLayerIndex < FDocument.LayerCount) and
+     (FDocument[FLastPlacedLayerIndex] = FLastPlacedLayer) then
+    FDocument.SelectedIndex := FLastPlacedLayerIndex
+  else
+    FDocument.SetSelectedLayers([]);
+  Invalidate;
+end;
+
 procedure TVectArtCanvasControl.MouseDown(Button: TMouseButton;
   Shift: TShiftState; X, Y: Integer);
 var
@@ -1694,7 +1733,10 @@ var
   PathMenuLayer: TVectArtPathLayer;
   PathMenuVertex, PathMenuSegment: Integer;
   PathMenuT: Single;
+  LayerCountBefore: Integer;
 begin
+  LayerCountBefore := 0;
+  if FDocument <> nil then LayerCountBefore := FDocument.LayerCount;
   FPointerPosition := Point(X, Y);
   FPointerInside := PtInRect(ClientRect, FPointerPosition);
   if (Button = mbLeft) and (FEditorState <> nil) and (FEditorState.PendingSymbol >= 0) then
@@ -1704,12 +1746,24 @@ begin
     begin
       PlaceMapSymbol(FDocument, EditHistory, FEditorState.PendingSymbol,
         FEditorState.PendingSymbolLabel, LogicalPoint, not (ssAlt in Shift));
+      if FDocument.LayerCount > LayerCountBefore then
+      begin
+        FLastPlacedLayerIndex := FDocument.LayerCount - 1;
+        FLastPlacedLayer := FDocument[FLastPlacedLayerIndex];
+      end;
       FEditorState.PendingSymbol := -1;
       FEditorState.ActiveMapPreset := -1;
       Invalidate;
     end;
     Exit;
   end;  CalculateCanvasBounds;
+  if (Button = mbRight) and (FEditorState <> nil) and
+    ((FEditorState.CurrentTool <> vetSelect) or
+     (FEditorState.PendingSymbol >= 0)) then
+  begin
+    EndPlacement;
+    Exit;
+  end;
   FMapPathEditor.Configure(FDocument,FEditorState,EditHistory,FCanvasBounds,FZoom);
   if FMapPathEditor.MouseDown(Button,Shift,X,Y) then begin
     if CanFocus then SetFocus;
@@ -1779,6 +1833,15 @@ begin
         [vetSelect, vetLine, vetPath, vetShape, vetTextPath]) then Exit;
     LogicalPointValid := TryClientPointToLogical(Point(X, Y), LogicalPoint);
     LayerIndex := FInteraction.LayerAt(X, Y);
+    if (LayerIndex <= 0) and (PathMenuLayer = nil) then
+      Exit;
+    if (LayerIndex > 0) and not FDocument.IsLayerSelected(LayerIndex) then
+    begin
+      SelectMapRakuContextMenuTarget(FDocument, FEditorState,
+        LayerIndex, LogicalPoint, LogicalPointValid);
+      Invalidate;
+      Exit;
+    end;
     if (((LayerIndex<=0) and (PathMenuLayer<>nil)) or
       SelectMapRakuContextMenuTarget(FDocument, FEditorState,
         LayerIndex, LogicalPoint, LogicalPointValid)) and
@@ -1882,6 +1945,11 @@ begin
       FPenPointerActive and FPenPressureAvailable);
     if FShapeCreation.MouseDown(Button, Shift, X, Y) then
     begin
+      if FDocument.LayerCount > LayerCountBefore then
+      begin
+        FLastPlacedLayerIndex := FDocument.LayerCount - 1;
+        FLastPlacedLayer := FDocument[FLastPlacedLayerIndex];
+      end;
       BeginCreatedTextPathEdit;
       if FTextEditing and (ssDouble in Shift) then
         FSkipTextDblClick := True;
@@ -2238,7 +2306,10 @@ var
   Left: Single;
   Right: Single;
   Top: Single;
+  LayerCountBefore: Integer;
 begin
+  LayerCountBefore := 0;
+  if FDocument <> nil then LayerCountBefore := FDocument.LayerCount;
   if (Button=mbLeft) and FMapPathEditor.MouseUp then begin MouseCapture:=False; Invalidate; Exit; end;
   if (Button = mbLeft) and FTransformInteraction.Finish then
   begin
@@ -2321,6 +2392,11 @@ begin
     FPenPointerActive and FPenPressureAvailable);
   if FShapeCreation.MouseUp(Button, Shift, X, Y) then
   begin
+    if FDocument.LayerCount > LayerCountBefore then
+    begin
+      FLastPlacedLayerIndex := FDocument.LayerCount - 1;
+      FLastPlacedLayer := FDocument[FLastPlacedLayerIndex];
+    end;
     FPenPointerActive := False;
     MouseCapture := False;
     if (FEditorState <> nil) and
@@ -2795,6 +2871,7 @@ begin
         else
           SelectionGeometry := BuildSelectionGeometry(SelectionLayerRect,
             SelectionFrameOffsetPixels);
+        FInteraction.CurrentSelectionGeometry(SelectionGeometry);
         FTransformInteraction.Configure(FDocument, EditHistory, FEditorState, FCanvasBounds, FZoom);
         if FTransformInteraction.Active or FTransformInteraction.HasTransformedSelection then
           FTransformInteraction.Geometry(SelectionGeometry);
@@ -3468,6 +3545,7 @@ begin
     else
       SelectionGeometry := BuildSelectionGeometry(SelectionLayerRect,
         SelectionFrameOffsetPixels);
+    FInteraction.CurrentSelectionGeometry(SelectionGeometry);
     FTransformInteraction.Configure(FDocument, EditHistory, FEditorState, FCanvasBounds, FZoom);
     if FTransformInteraction.Active or FTransformInteraction.HasTransformedSelection then
       FTransformInteraction.Geometry(SelectionGeometry);
