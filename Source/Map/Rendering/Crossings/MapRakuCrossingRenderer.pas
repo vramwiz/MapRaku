@@ -17,6 +17,7 @@ type
     FVisuals: TArray<TMapCrossingVisual>;
     FMarkColor: TAlphaColor;
     FCanvasPath: ISkPath;
+    FCanvasSettings: TVectArtCanvasLayer;
     procedure AddRailCrossing(Upper: TVectArtPathLayer; V: TMapCrossingVisual; UW: Single);
     procedure AddTunnel(Lower: TVectArtPathLayer; V: TMapCrossingVisual;
       UW, LW, Sine, Cosine, Margin, LowerDistance: Single);
@@ -29,6 +30,7 @@ type
   public
     // 現在形状から切り抜きと連結側線を作る。編集後は新しいコンテキストを作成する。
     constructor Create(Document: TVectArtDocument);
+    property CanvasSettings: TVectArtCanvasLayer read FCanvasSettings;
     // 呼び出し元のSave/Restore内で、対象レイヤーだけにクリップを適用する。
     procedure ClipLower(const Canvas: ISkCanvas; Layer: TVectArtLayer);
     // 上側本体と同じ不透明度で、統合済みの側線を一度だけ描く。
@@ -216,6 +218,7 @@ var Builder: ISkPathBuilder; C: TMapRakuCrossing; I: Integer;
   Upper: TVectArtPathLayer;
 begin
   inherited Create;
+  FCanvasSettings := Document.CanvasLayer;
   Builder:=TSkPathBuilder.Create;
   Builder.AddRect(TRectF.Create(-Document.CanvasLayer.Width*0.5,
     -Document.CanvasLayer.Height*0.5,Document.CanvasLayer.Width*0.5,

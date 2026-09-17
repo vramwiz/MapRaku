@@ -5,7 +5,7 @@ interface
 
 uses
   System.Classes, System.Types, Vcl.Controls, MapRakuDocument,
-  MapRakuEditorState, MapRakuEditHistory,
+  MapRakuEditorState, MapRakuEditHistory, MapRakuPaintStyles,
   MapRakuSnapGeometry;
 
 type
@@ -151,6 +151,7 @@ end;
 
 procedure TVectArtShapeCreation.CancelPath;
 begin
+  if FEditorState <> nil then FEditorState.EndMapPlacement;
   FActive := False;
   FCreationTool := vetSelect;
   FSnapGuides := nil;
@@ -445,6 +446,13 @@ begin
   Data.Opacity := FEditorState.RectangleOpacity;
   Data.StrokeColor := FEditorState.LineStrokeColor;
   Data.PaintStyle := FEditorState.CreationPaintStyle;
+  Data.MapColorOverride := False;
+  if (Data.MapElement = 'road') or (Data.MapElement = 'river') then
+  begin
+    Data.StrokeColor := FEditorState.MapPlacementColor(FDocument,
+      Data.MapColorOverride);
+    Data.PaintStyle := TMapRakuPaintStyle.Solid(Data.StrokeColor);
+  end;
   Data.MifStrokeStyle := FEditorState.LineMifStrokeStyle;
   Data.StrokeWidth := FEditorState.LineStrokeWidth;
   Data.Visible := True;
@@ -504,6 +512,13 @@ begin
   Data.Opacity := FEditorState.RectangleOpacity;
   Data.StrokeColor := FEditorState.LineStrokeColor;
   Data.PaintStyle := FEditorState.CreationPaintStyle;
+  Data.MapColorOverride := False;
+  if (Data.MapElement = 'road') or (Data.MapElement = 'river') then
+  begin
+    Data.StrokeColor := FEditorState.MapPlacementColor(FDocument,
+      Data.MapColorOverride);
+    Data.PaintStyle := TMapRakuPaintStyle.Solid(Data.StrokeColor);
+  end;
   Data.MifStrokeStyle := FEditorState.LineMifStrokeStyle;
   Data.StrokeWidth := FEditorState.LineStrokeWidth;
   Data.Visible := True;
@@ -973,6 +988,7 @@ begin
     Exit;
   if FEditorState.CurrentTool = vetFreehand then
   begin
+    FEditorState.BeginMapPlacement(FDocument);
     FStartConnect:=False; FEndConnect:=False; FInputEndpointSnapped:=False;
     PointValue := ClampToCanvas(Point(X, Y));
     FActive := True;
@@ -990,6 +1006,7 @@ begin
       vetTextPath]));
   if not FActive then
   begin
+    FEditorState.BeginMapPlacement(FDocument);
     FStartConnect:=FInputEndpointSnapped;
     FDocument.SetSelectedLayers([]);
   end;
@@ -1132,6 +1149,7 @@ begin
     CreateRectangle;
   FActive := False;
   FSnapGuides := nil;
+  FEditorState.EndMapPlacement;
 end;
 
 function TVectArtShapeCreation.BuildFreehandPathVertices:

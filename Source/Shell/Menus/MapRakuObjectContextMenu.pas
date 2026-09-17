@@ -15,6 +15,8 @@ type
     Document: TVectArtDocument;       // トップレベル選択と編集対象を所有するDocument。
     EditorState: TVectArtEditorState; // 開いたグループとその直下選択を保持する状態。
     Layers: TArray<TVectArtLayer>;    // 右クリック後に確定した実際の選択レイヤー。
+    Source: TObject;                  // キャンバス起点の項目だけが座標編集を提供する。
+    ScreenPoint: TPoint;
     function SelectionCount: Integer;
     function SingleLayer: TVectArtLayer;
   end;
@@ -459,17 +461,25 @@ end;
 
 procedure TMapRakuObjectContextMenu.ShowForObject(Sender: TObject;
   const ScreenPoint: TPoint);
+var Context: TMapRakuObjectMenuContext;
 begin
   FHitLayerIndices := nil;
-  Rebuild(CaptureContext);
+  Context:=CaptureContext;
+  Context.Source:=Sender;
+  Context.ScreenPoint:=ScreenPoint;
+  Rebuild(Context);
   FMenu.OpenAtScreenPoint(ScreenPoint);
 end;
 
 procedure TMapRakuObjectContextMenu.ShowForObject(Sender: TObject;
   const ScreenPoint: TPoint; const LayerIndices: TArray<Integer>);
+var Context: TMapRakuObjectMenuContext;
 begin
   FHitLayerIndices := Copy(LayerIndices);
-  Rebuild(CaptureContext);
+  Context:=CaptureContext;
+  Context.Source:=Sender;
+  Context.ScreenPoint:=ScreenPoint;
+  Rebuild(Context);
   FMenu.OpenAtScreenPoint(ScreenPoint);
 end;
 

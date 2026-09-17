@@ -17,6 +17,7 @@ uses
   MapRakuObjectClipboard, MapRakuLayerOperations, MapRakuEditActionsUI,
   MapRakuGroupCommands,
   MapRakuGeometryPropertiesFrame,
+  MapRakuMapPanel,
   MapRakuObjectPropertiesFrame, MapRakuToolFrames,
   MapRakuToolPaletteFrame, MapRakuObjectContextMenu,
   MapRakuTextContextMenu, MapRakuPathContextMenu,
@@ -31,8 +32,6 @@ type
     pnlViewMenuButton: TPanel;
     pnlViewMenuPopup: TPanel;
     pnlLayoutEditMenuItem: TPanel;
-    pnlShortcutBar: TPanel;
-    lblShortcutItems: TLabel;
     pnlStatusBar: TPanel;
     lblStatus: TLabel;
     pnlWorkspace: TPanel;
@@ -65,6 +64,7 @@ type
     FGeometryPopupFrame: TMapRakuGeometryPropertiesFrame;
     FLayerFrame: TLayerPanelFrame;
     FLineToolbar: TVectArtLineToolbarControl;
+    FMapToolsPanel: TMapToolsPanel;
     FObjectPropertiesFrame: TObjectPropertiesFrame;
     FObjectContextMenu: TMapRakuObjectContextMenu;
     FSkiaAcquired: Boolean;
@@ -139,9 +139,9 @@ var
 implementation
 
 uses
-  MapRakuFile, MapRakuExport, MapRakuMapPanel, System.UITypes, System.IniFiles, System.IOUtils, System.Math, System.Types,
+  MapRakuFile, MapRakuExport, System.UITypes, System.IniFiles, System.IOUtils, System.Math, System.Types,
   TextRendererSkiaBootstrap, TextRendererSkiaRuntime,
-  MapRakuCanvasSettingsDialog, MapRakuTheme,
+  MapRakuCanvasSettingsDialog, MapRakuTheme, MapRakuMapCommands,
   MapRakuDocumentJson, MapRakuImageImport,
   MapRakuKeyboardMovement, MapRakuLayerFlipOperations,
   Vcl.Dialogs, Winapi.Dwmapi;
@@ -165,6 +165,7 @@ begin
   if FEditorState <> nil then
   begin
     FEditorState.MapElement := '';
+    FEditorState.ActiveMapPreset := -1;
     FEditorState.ActivateTool(Tool);
   end;
 end;
@@ -233,9 +234,8 @@ begin
   FDesignerContext := TVectArtDesignerContext.Create(FDocument, FEditHistory,
     FEditorState);
   lblMenuItems.Visible := False;
-  lblShortcutItems.Visible := False;
   FEditActionsUI := TVectArtEditActionsUI.CreateForHosts(Self, Self,
-    pnlMenuBar, pnlShortcutBar);
+    pnlMenuBar);
   FEditActionsUI.Document := FDocument;
   FEditActionsUI.History := FEditHistory;
   FEditActionsUI.EditorState := FEditorState;
@@ -243,7 +243,7 @@ begin
   FEditActionsUI.OnGeometrySettingsRequest := GeometrySettingsRequest;
   pnlViewMenuButton.Left := MulDiv(36, CurrentPPI, 96);
   FLineToolbar := TVectArtLineToolbarControl.CreateForHost(Self,
-    pnlShortcutBar);
+    pnlMenuBar);
   FLineToolbar.Document := FDocument;
   FLineToolbar.EditHistory := FEditHistory;
   FLineToolbar.EditorState := FEditorState;
@@ -332,7 +332,8 @@ begin
   UpdateLayoutEditMenu;
   UpdateToolMenuItems;
   LoadLayoutSettings;
-  TMapToolsPanel.CreateTools(Self, FDocument, FEditorState, FEditHistory, pnlWorkspace);
+  FMapToolsPanel := TMapToolsPanel.CreateTools(Self, FDocument,
+    FEditorState, FEditHistory, pnlWorkspace);
   InitializeShortcuts;
   HistoryChanged(FEditHistory);
   EditorStateChanged(FEditorState);
@@ -346,21 +347,40 @@ procedure TMainForm.CanvasSettingsRequest(Sender: TObject);
 var
   CanvasHeight: Integer;
   CanvasWidth: Integer;
-  DarkMap: Boolean;
+  Settings: TMapRakuCanvasColorSettings;
+  RailColors: array[0..3] of TColor;
+  I: Integer;
 begin
   if (FDocument = nil) or (FDocument.CanvasLayer = nil) then
     Exit;
   if ExecuteCanvasSettingsDialog(Self, FDocument.CanvasLayer.Width,
-    FDocument.CanvasLayer.Height,
-    FDocument.CanvasLayer.BackgroundColor = clBlack,
-    CanvasWidth, CanvasHeight, DarkMap) then
+    FDocument.CanvasLayer.Height,FDocument.CanvasLayer,
+    CanvasWidth, CanvasHeight, Settings) then
   begin
-    FDocument.SetCanvasSize(CanvasWidth, CanvasHeight);
-    ApplyMapTheme(FDocument, FEditHistory, DarkMap);
-    if DarkMap then
-      FEditorState.CreationColor := clWhite
-    else
-      FEditorState.CreationColor := clBlack;
+    if (CanvasWidth <> FDocument.CanvasLayer.Width) or
+      (CanvasHeight <> FDocument.CanvasLayer.Height) then
+      FDocument.SetCanvasSize(CanvasWidth, CanvasHeight);
+    if Settings.DarkMap <> (FDocument.CanvasLayer.BackgroundColor = clBlack) then
+    begin
+      ApplyMapTheme(FDocument, FEditHistory, Settings.DarkMap);
+      if Settings.DarkMap then FEditorState.CreationColor := clWhite
+      else FEditorState.CreationColor := clBlack;
+    end;
+    if Settings.ColorChanged[0] or Settings.ApplyRoadExisting then
+      SetMapPlacementPreset(FDocument,FEditHistory,'road',Settings.Colors[0],
+        Settings.ApplyRoadExisting);
+    if Settings.ColorChanged[1] or Settings.ApplyRiverExisting then
+      SetMapPlacementPreset(FDocument,FEditHistory,'river',Settings.Colors[1],
+        Settings.ApplyRiverExisting);
+    RailColors[0] := FDocument.CanvasLayer.JrPrimaryColor;
+    RailColors[1] := FDocument.CanvasLayer.JrSecondaryColor;
+    RailColors[2] := FDocument.CanvasLayer.RailPrimaryColor;
+    RailColors[3] := FDocument.CanvasLayer.RailSecondaryColor;
+    for I := 0 to 3 do
+      if Settings.ColorChanged[I+2] then
+        RailColors[I] := Settings.Colors[I+2];
+    SetMapRailPalette(FDocument,FEditHistory,RailColors[0],RailColors[1],
+      RailColors[2],RailColors[3]);
     EditorStateChanged(FEditorState);
   end;
 end;
@@ -472,6 +492,7 @@ begin
   if not ConfirmSave then Exit;
   FEditorState.CurrentTool := vetSelect; FEditorState.OpenGroup := nil;
   FEditorState.PendingSymbol := -1;
+  FEditorState.ActiveMapPreset := -1;
   Empty := TVectArtDocument.Create;
   try
     FEditHistory.Clear;
@@ -549,6 +570,8 @@ begin
     FObjectPropertiesFrame.RefreshFromDocument;
   if FToolPaletteFrame <> nil then
     FToolPaletteFrame.RefreshState;
+  if FMapToolsPanel <> nil then
+    FMapToolsPanel.RefreshState;
   if FLineToolbar <> nil then
     FLineToolbar.RefreshState;
   if (FDocument <> nil) and (FDocument.CanvasLayer <> nil) then
@@ -650,6 +673,14 @@ begin
     Exit;
   end;
   if (FEditorFrame <> nil) and FEditorFrame.CanvasControl.TextEditing then Exit;
+  if (Key = VK_ESCAPE) and (FEditorState <> nil) and
+    (FEditorState.PendingSymbol >= 0) then
+  begin
+    FEditorState.PendingSymbol := -1;
+    FEditorState.ActiveMapPreset := -1;
+    Key := 0;
+    Exit;
+  end;
   if (FShortcuts <> nil) and FShortcuts.KeyDown(Key, Shift) then
     Exit;
   if (FEditorFrame <> nil) and

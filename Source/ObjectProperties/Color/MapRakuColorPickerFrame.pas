@@ -27,6 +27,7 @@ type
     FTextureControl: TMapRakuTextureControl; // テクスチャモードだけで表示する画像設定。
     FGradientKindSelector: TMapRakuGradientKindCombo;
     FColor: TColor;
+    FCompactColorMode: Boolean;
     FColorEnabled: Boolean;
     FCurrentHue: Double;
     FHueBar: TColorPickerHueBar;
@@ -78,6 +79,7 @@ type
     procedure SetPaintModeEnabled(Value: Boolean);
     procedure SetSelectedColor(const Value: TColor);
     procedure SetColorEnabled(Value: Boolean);
+    procedure SetCompactColorMode(Value: Boolean);
     procedure SetTargetCaption(const Value: string);
     function GetOpacity: Integer;
     procedure SetOpacity(Value: Integer);
@@ -110,6 +112,9 @@ type
       write SetPaintModeEnabled;
     // 色を持たない選択では色操作だけを無効化し、不透明度操作は独立して維持する。
     property ColorEnabled: Boolean read FColorEnabled write SetColorEnabled;
+    // 単色だけを選ぶダイアログでは、共通ピッカーの色操作を詰めて表示する。
+    property CompactColorMode: Boolean read FCompactColorMode
+      write SetCompactColorMode;
     // 選択中のオブジェクトまたはフィルターなど、現在の色適用先を見出しへ表示する。
     property TargetCaption: string write SetTargetCaption;
     // 0から100の整数で表示・編集する不透明度。
@@ -141,7 +146,8 @@ type
 implementation
 
 uses
-  System.Math, System.SysUtils, Winapi.Windows, ColorPickerColorMath;
+  System.Math, System.SysUtils, Winapi.Windows, ColorPickerColorMath,
+  MapRakuColorCode;
 
 {$R *.dfm}
 
@@ -287,40 +293,6 @@ begin
   FScrollBar.Visible := False;
   FScrollBar.OnChange := ScrollBarChanged;
   SyncControls;
-end;
-
-function TryParseColorCode(const Text: string; out Color: TColor): Boolean;
-var
-  HexText: string;
-  Parts: TArray<string>;
-  RedValue: Integer;
-  GreenValue: Integer;
-  BlueValue: Integer;
-begin
-  Result := False;
-  HexText := Trim(Text);
-  if HexText.StartsWith('#') then
-    Delete(HexText, 1, 1);
-  if (Length(HexText) = 6) and TryStrToInt('$' + HexText, RedValue) then
-  begin
-    Color := RGB((RedValue shr 16) and $FF, (RedValue shr 8) and $FF, RedValue and $FF);
-    Exit(True);
-  end;
-
-  HexText := Trim(Text);
-  if (Length(HexText) >= 5) and SameText(Copy(HexText, 1, 4), 'rgb(') and
-    (HexText[Length(HexText)] = ')') then
-    HexText := Copy(HexText, 5, Length(HexText) - 5);
-  Parts := HexText.Split([',']);
-  if (Length(Parts) <> 3) or not TryStrToInt(Trim(Parts[0]), RedValue) or
-    not TryStrToInt(Trim(Parts[1]), GreenValue) or
-    not TryStrToInt(Trim(Parts[2]), BlueValue) then
-    Exit;
-  if not InRange(RedValue, 0, 255) or not InRange(GreenValue, 0, 255) or
-    not InRange(BlueValue, 0, 255) then
-    Exit;
-  Color := RGB(RedValue, GreenValue, BlueValue);
-  Result := True;
 end;
 
 procedure TMapRakuColorPickerFrame.ColorCodeExit(Sender: TObject);
@@ -662,6 +634,7 @@ var
   CodeHeight: Integer;
   CodeLabelWidth: Integer;
   ScrollOffset: Integer;
+  CellSize: Integer;
 begin
   inherited Resize;
   if FSVArea = nil then
@@ -670,6 +643,33 @@ begin
   PickerGap := MulDiv(PICKER_GAP, CurrentPPI, 96);
   HueWidth := MulDiv(HUE_BAR_WIDTH, CurrentPPI, 96);
   SelectorSize := MulDiv(COLOR_SELECTOR_SIZE, CurrentPPI, 96);
+  if FCompactColorMode then
+  begin
+    FScrollBar.Visible := False;
+    FTitleLabel.SetBounds(0,0,ClientWidth,MulDiv(26,CurrentPPI,96));
+    FColorTargetSelector.SetBounds(Margin,MulDiv(32,CurrentPPI,96),
+      ClientWidth-Margin*2,SelectorSize);
+    CellSize := Max((ClientWidth-Margin*2-
+      7*MulDiv(2,CurrentPPI,96)) div 8,1);
+    HistoryHeight := MulDiv(19,CurrentPPI,96)+4*CellSize+
+      4*MulDiv(2,CurrentPPI,96);
+    FColorHistory.SetBounds(Margin,MulDiv(66,CurrentPPI,96),
+      ClientWidth-Margin*2,HistoryHeight);
+    CodeTop := MulDiv(66,CurrentPPI,96)+HistoryHeight+
+      MulDiv(8,CurrentPPI,96);
+    CodeHeight := MulDiv(32,CurrentPPI,96);
+    CodeLabelWidth := MulDiv(92,CurrentPPI,96);
+    FColorCodeLabel.SetBounds(Margin,CodeTop,CodeLabelWidth,CodeHeight);
+    FColorCodeEdit.SetBounds(Margin+CodeLabelWidth,CodeTop,
+      ClientWidth-Margin*2-CodeLabelWidth,CodeHeight);
+    PickerTop := CodeTop+CodeHeight+MulDiv(8,CurrentPPI,96);
+    PickerHeight := Max(ClientHeight-PickerTop-Margin,1);
+    FHueBar.SetBounds(ClientWidth-Margin-HueWidth,
+      PickerTop,HueWidth,PickerHeight);
+    FSVArea.SetBounds(Margin,PickerTop,
+      FHueBar.Left-Margin-PickerGap,PickerHeight);
+    Exit;
+  end;
   ContentTop := MulDiv(MODE_CONTENT_TOP, CurrentPPI, 96);
   ContentHeight := MulDiv(SCROLL_CONTENT_HEIGHT, CurrentPPI, 96);
   BarWidth := MulDiv(SCROLL_BAR_WIDTH, CurrentPPI, 96);
@@ -745,6 +745,29 @@ begin
   finally
     FUpdating := False;
   end;
+end;
+
+procedure TMapRakuColorPickerFrame.SetCompactColorMode(Value: Boolean);
+begin
+  if FCompactColorMode = Value then Exit;
+  FCompactColorMode := Value;
+  FColorHistory.SquareCells := Value;
+  if Value then
+  begin
+    FColorCodeLabel.Font.Height := -MulDiv(13,CurrentPPI,96);
+    FColorCodeEdit.Font.Height := -MulDiv(14,CurrentPPI,96);
+  end
+  else
+  begin
+    FColorCodeLabel.Font.Height := -MulDiv(9,CurrentPPI,96);
+    FColorCodeEdit.Font.Height := -MulDiv(11,CurrentPPI,96);
+  end;
+  FOpacityLabel.Visible := not Value;
+  FOpacityTrackBar.Visible := not Value;
+  FModeSelector.Visible := not Value;
+  FGradientKindSelector.Visible := not Value and
+    (FPaintStyle.Kind = slpkGradient);
+  Resize;
 end;
 
 procedure TMapRakuColorPickerFrame.SetColorEnabled(Value: Boolean);

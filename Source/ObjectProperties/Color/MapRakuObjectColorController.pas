@@ -65,7 +65,7 @@ implementation
 
 uses
   System.Math, MapRakuEditCommands, MapRakuFilterCommands,
-  MapRakuColorTargets, MapRakuEditorState, MapRakuPaintCommands,
+  MapRakuColorTargets, MapRakuEditorState, MapRakuMapCommands, MapRakuPaintCommands,
   MapRakuObjectPropertySelection;
 
 procedure AddAppliedCommand(const Context: IVectArtDesignerContext;
@@ -110,6 +110,8 @@ procedure TMapRakuObjectColorController.AdoptVisiblePickerAsCreationPaint;
 begin
   if (FContext = nil) or (FContext.EditorState = nil) then
     Exit;
+  if (FContext.EditorState.MapElement = 'road') or
+    (FContext.EditorState.MapElement = 'river') then Exit;
   // 無効な対象（画像やぼかしなど）は表示値を作成既定へ上書きしない。
   if FFrame.ColorEnabled then
     FContext.EditorState.CreationPaintStyle := FFrame.PaintStyle;
@@ -189,12 +191,24 @@ var
   OldStyle: TMapRakuPaintStyle;
   StopId: Integer;
   Target: TMapRakuLayerColorTarget;
+  FromSelectedObject: Boolean;
 begin
   if FRefreshing or FUpdatingColor or (FContext = nil) or
     (FContext.Document = nil) then
     Exit;
   Document := FContext.Document;
   NewColor := ColorToRGB(FFrame.SelectedColor);
+  if MapRakuUsesCreationPaint(FContext) and
+    ((FContext.EditorState.MapElement = 'road') or
+     (FContext.EditorState.MapElement = 'river')) then
+  begin
+    FContext.EditorState.MapPlacementColor(Document,FromSelectedObject);
+    if FromSelectedObject then Exit;
+    SetMapPlacementPreset(Document,FContext.EditHistory,
+      FContext.EditorState.MapElement,NewColor);
+    if Assigned(FOnChanged) then FOnChanged(Self);
+    Exit;
+  end;
   if MapRakuSelectedFilter(FContext, Layer, Filter) then
   begin
     if Layer.Locked or not TryGetMapRakuFilterColor(Filter, OldColor) then
@@ -612,6 +626,7 @@ end;
 procedure TMapRakuObjectColorController.Refresh;
 var
   DisplayStyle: TMapRakuPaintStyle;
+  FromSelectedObject: Boolean;
   StopOpacity: Single;
   ColorEnabled: Boolean;
   ColorLayers: TArray<TVectArtLayer>;
@@ -665,6 +680,26 @@ begin
 
     if CreationPaintActive then
     begin
+      if (FContext.EditorState.MapElement = 'road') or
+        (FContext.EditorState.MapElement = 'river') then
+      begin
+        FFrame.PaintModeEnabled := False;
+        ColorValue := FContext.EditorState.MapPlacementColor(
+          FContext.Document,FromSelectedObject);
+        if FromSelectedObject then
+          FFrame.TargetCaption := '選択中の経路の色で配置'
+        else
+          FFrame.TargetCaption := '道路・川の配置色';
+        FFrame.ColorEnabled := not FromSelectedObject;
+        FFrame.OpacityEnabled := False;
+        FUpdatingColor := True;
+        try
+          FFrame.PaintStyle := TMapRakuPaintStyle.Solid(ColorValue);
+        finally
+          FUpdatingColor := False;
+        end;
+        Exit;
+      end;
       FFrame.PaintModeEnabled := True;
       FFrame.TargetCaption := '作成色';
       FFrame.ColorEnabled := True;

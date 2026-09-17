@@ -129,7 +129,12 @@ begin
   else if Layer is TMapRakuArcLayer then
     TMapRakuArcLayer(Layer).StrokeColor := Value
   else if Layer is TVectArtPathLayer then
-    TVectArtPathLayer(Layer).StrokeColor := Value
+  begin
+    TVectArtPathLayer(Layer).StrokeColor := Value;
+    if (TVectArtPathLayer(Layer).MapElement = 'road') or
+      (TVectArtPathLayer(Layer).MapElement = 'river') then
+      TVectArtPathLayer(Layer).MapColorOverride := True;
+  end
   else if Layer is TMapRakuShapeLayer then
     TMapRakuShapeLayer(Layer).StrokeColor := Value;
 end;

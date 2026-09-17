@@ -22,17 +22,19 @@ begin
   Halt(1);
 end;
 procedure RunMapTests;
-var D, Restored, CrossingDoc: TVectArtDocument; H, LocalHistory: TVectArtEditHistory; S: TVectArtEditorState;
+var D, Restored, CrossingDoc, ColorDoc, ColorRestored, PaletteDoc: TVectArtDocument; H, LocalHistory: TVectArtEditHistory; S: TVectArtEditorState;
   R: TVectArtPathData; J, E: string;
   Creation: TVectArtShapeCreation; Buffer: TVectArtRenderBuffer; P: TVectArtRgbaPixel;
   I: Integer;
   ExceptionSink: TTestExceptionSink; Form: TMainForm; Bitmap: TBitmap; Png: TPngImage;
   Editor: TMapPathEditor; SnapPoint, Tangent: TPointF; SnapPath: TVectArtPathLayer;
+  VertexIndex, SegmentIndex: Integer; SegmentT: Single;
   Crossings: TArray<TMapRakuCrossing>;
   CrossingGroups: TArray<TMapRakuCrossingGroup>;
   SavedId: string;
   PlainSvg: string;
   CrossingImageHash,PlainImageHash: UInt64;
+  FromSelectedObject: Boolean;
 begin
   ExceptionSink := TTestExceptionSink.Create;
   Application.OnException := ExceptionSink.HandleException;
@@ -48,6 +50,149 @@ begin
   S := TVectArtEditorState.Create;
   Creation := TVectArtShapeCreation.Create; Buffer := TVectArtRenderBuffer.Create;
   try
+    ColorDoc := TVectArtDocument.Create;
+    ColorRestored := TVectArtDocument.Create;
+    try
+      R := Road('road',PointF(0,0),PointF(10,0));
+      InsertMapPath(ColorDoc,LocalHistory,R);
+      R := Road('road',PointF(0,10),PointF(10,10));
+      InsertMapPath(ColorDoc,LocalHistory,R);
+      R := Road('river',PointF(0,20),PointF(10,20));
+      InsertMapPath(ColorDoc,LocalHistory,R);
+      S.CurrentTool := vetLine;
+      S.MapElement := 'road';
+      S.CreationColor := clBlack;
+      ColorDoc.SetSelectedLayers([]);
+      Check(S.MapPlacementColor(ColorDoc,FromSelectedObject) =
+        ColorDoc.CanvasLayer.RoadPresetColor,
+        'Road placement must ignore shared creation color');
+      TVectArtPathLayer(ColorDoc[1]).StrokeColor := clRed;
+      TVectArtPathLayer(ColorDoc[1]).MapColorOverride := True;
+      ColorDoc.SetSelectedLayers([1]);
+      Check((S.MapPlacementColor(ColorDoc,FromSelectedObject) = clRed) and
+        FromSelectedObject,'Selected custom road color');
+      Creation.Configure(ColorDoc,LocalHistory,S,Rect(0,0,800,600),1);
+      Check(Creation.MouseDown(mbLeft,[],100,100),'Custom road start');
+      Check((S.MapPlacementColor(ColorDoc,FromSelectedObject) = clRed) and
+        FromSelectedObject,'Road preview must retain the source color');
+      Check(Creation.MouseUp(mbLeft,[],200,100),'Custom road finish');
+      Check((TVectArtPathLayer(ColorDoc[ColorDoc.LayerCount-1]).StrokeColor =
+        clRed) and TVectArtPathLayer(ColorDoc[ColorDoc.LayerCount-1]).MapColorOverride,
+        'New road must inherit selected custom color');
+      ColorDoc.SetSelectedLayers([1]);
+      S.CurrentTool := vetLine;
+      S.MapElement := 'river';
+      Check((S.MapPlacementColor(ColorDoc,FromSelectedObject) =
+        ColorDoc.CanvasLayer.RiverPresetColor) and not FromSelectedObject,
+        'Road color must not leak into river placement');
+      S.MapElement := 'road';
+      ApplyMapColorPreset(ColorDoc,LocalHistory,
+        TVectArtPathLayer(ColorDoc[1]),True);
+      Check((ColorDoc.CanvasLayer.RoadPresetColor = clRed) and
+        (TVectArtPathLayer(ColorDoc[2]).StrokeColor = clRed) and
+        not TVectArtPathLayer(ColorDoc[1]).MapColorOverride and
+        (TVectArtPathLayer(ColorDoc[3]).StrokeColor <> clRed),
+        'Road preset bulk apply');
+      Check(TryDeserializeVectArtDocument(
+        SerializeVectArtDocument(ColorDoc),ColorRestored,E),
+        'Color preset JSON: '+E);
+      Check((ColorRestored.CanvasLayer.RoadPresetColor = clRed) and
+        (ColorRestored.CanvasLayer.RiverPresetColor =
+          ColorDoc.CanvasLayer.RiverPresetColor) and
+        not TVectArtPathLayer(ColorRestored[1]).MapColorOverride,
+        'Color preset JSON values');
+      LocalHistory.Undo;
+      Check((ColorDoc.CanvasLayer.RoadPresetColor <> clRed) and
+        (TVectArtPathLayer(ColorDoc[2]).StrokeColor <> clRed) and
+        TVectArtPathLayer(ColorDoc[1]).MapColorOverride,
+        'Road preset bulk undo');
+      LocalHistory.Redo;
+      Check((ColorDoc.CanvasLayer.RoadPresetColor = clRed) and
+        (TVectArtPathLayer(ColorDoc[2]).StrokeColor = clRed),
+        'Road preset bulk redo');
+      SetMapPlacementPreset(ColorDoc,LocalHistory,'river',clBlue);
+      Check((ColorDoc.CanvasLayer.RiverPresetColor = clBlue) and
+        (ColorDoc.CanvasLayer.RoadPresetColor = clRed) and
+        (TVectArtPathLayer(ColorDoc[3]).StrokeColor <> clBlue),
+        'River preset changes future placement only');
+      LocalHistory.Undo;
+      Check(ColorDoc.CanvasLayer.RiverPresetColor <> clBlue,
+        'River preset undo');
+      S.MapElement := '';
+      S.CurrentTool := vetSelect;
+    finally
+      ColorRestored.Free;
+      ColorDoc.Free;
+      LocalHistory.Clear;
+    end;
+    PaletteDoc := TVectArtDocument.Create;
+    try
+      R := Road('jr',PointF(-60,0),PointF(60,0));
+      InsertMapPath(PaletteDoc,LocalHistory,R);
+      RenderVectArtDocument(PaletteDoc,Buffer,200,100);
+      CrossingImageHash := 0;
+      for I := 0 to Buffer.PixelCount-1 do
+        CrossingImageHash := CrossingImageHash +
+          Buffer.Pixels[I].R*3 + Buffer.Pixels[I].G*5 +
+          Buffer.Pixels[I].B*7 + Buffer.Pixels[I].A;
+      SetMapRailPalette(PaletteDoc,LocalHistory,clRed,clGreen,clBlue,clYellow);
+      Check(TVectArtPathLayer(PaletteDoc[1]).StrokeColor = clBlack,
+        'Global railway palette must preserve path color data');
+      RenderVectArtDocument(PaletteDoc,Buffer,200,100);
+      PlainImageHash := 0;
+      for I := 0 to Buffer.PixelCount-1 do
+        PlainImageHash := PlainImageHash +
+          Buffer.Pixels[I].R*3 + Buffer.Pixels[I].G*5 +
+          Buffer.Pixels[I].B*7 + Buffer.Pixels[I].A;
+      Check(CrossingImageHash <> PlainImageHash,'JR palette must affect drawing');
+      TVectArtPathLayer(PaletteDoc[1]).StrokeColor := clRed;
+      Check(TryDeserializeVectArtDocument(
+        SerializeVectArtDocument(PaletteDoc),Restored,E),
+        'Rail palette JSON: '+E);
+      Check((Restored.CanvasLayer.JrPrimaryColor = clRed) and
+        (Restored.CanvasLayer.JrSecondaryColor = clGreen) and
+        (Restored.CanvasLayer.RailPrimaryColor = clBlue) and
+        (Restored.CanvasLayer.RailSecondaryColor = clYellow) and
+        (TVectArtPathLayer(Restored[1]).StrokeColor = clRed),
+        'Rail palette JSON values');
+      ApplyMapTheme(PaletteDoc,LocalHistory,True);
+      Check((PaletteDoc.CanvasLayer.JrPrimaryColor = clRed) and
+        (PaletteDoc.CanvasLayer.RailSecondaryColor = clYellow),
+        'Theme must preserve custom railway colors');
+      LocalHistory.Undo;
+      LocalHistory.Undo;
+      Check(PaletteDoc.CanvasLayer.JrPrimaryColor = $00222222,
+        'Rail palette undo');
+      ApplyMapTheme(PaletteDoc,LocalHistory,True);
+      Check((PaletteDoc.CanvasLayer.JrPrimaryColor = clWhite) and
+        (PaletteDoc.CanvasLayer.JrSecondaryColor = $00222222) and
+        (PaletteDoc.CanvasLayer.RailPrimaryColor = clWhite),
+        'Theme must switch untouched railway defaults');
+      LocalHistory.Undo;
+      LocalHistory.Clear;
+      PaletteDoc.RemovePath(1,R);
+      R := Road('river',PointF(-60,0),PointF(60,0));
+      R.StrokeColor := clBlue;
+      InsertMapPath(PaletteDoc,LocalHistory,R);
+      RenderVectArtDocument(PaletteDoc,Buffer,200,100);
+      CrossingImageHash := 0;
+      for I := 0 to Buffer.PixelCount-1 do
+        CrossingImageHash := CrossingImageHash +
+          Buffer.Pixels[I].R*3 + Buffer.Pixels[I].G*5 +
+          Buffer.Pixels[I].B*7 + Buffer.Pixels[I].A;
+      TVectArtPathLayer(PaletteDoc[1]).StrokeColor := clRed;
+      RenderVectArtDocument(PaletteDoc,Buffer,200,100);
+      PlainImageHash := 0;
+      for I := 0 to Buffer.PixelCount-1 do
+        PlainImageHash := PlainImageHash +
+          Buffer.Pixels[I].R*3 + Buffer.Pixels[I].G*5 +
+          Buffer.Pixels[I].B*7 + Buffer.Pixels[I].A;
+      Check(CrossingImageHash <> PlainImageHash,
+        'River renderer must use path color');
+    finally
+      LocalHistory.Clear;
+      PaletteDoc.Free;
+    end;
     D.CanvasLayer.Width := 800; D.CanvasLayer.Height := 600;
     R := Road('road', PointF(-300,0), PointF(300,0));
     InsertMapPath(D,H,R);
@@ -58,11 +203,27 @@ begin
     Editor:=TMapPathEditor.Create;
     try
       Editor.Configure(D,S,H,Rect(0,0,800,600),1);
-      Check(Editor.MouseDown(mbLeft,[],400,300),'Insert road vertex');
+      Check(not Editor.MouseDown(mbLeft,[],400,300),
+        'Road segment click must remain available for dragging');
+      Check(Length(TVectArtPathLayer(D[1]).Vertices)=2,
+        'Segment click must not insert a point');
+      Check(Editor.ContextTarget(400,300,SnapPath,VertexIndex,
+        SegmentIndex,SegmentT) and (SegmentIndex=0) and
+        (VertexIndex<0),'Road segment menu target');
+      Check(Editor.ExecuteContextEdit(SnapPath,VertexIndex,SegmentIndex,
+        SegmentT,False),'Insert road vertex from menu');
       Check(Length(TVectArtPathLayer(D[1]).Vertices)=3,'Point not inserted');
       Check(Editor.KeyDown(Ord('P')),'Point Bezier mode');
       Check(TVectArtPathLayer(D[1]).Vertices[1].Kind=slvkBezier,'Bezier data');
-      Check(Editor.MouseDown(mbRight,[],400,300),'Delete road vertex');
+      Check(not Editor.MouseDown(mbRight,[],400,300),
+        'Right click must open the context menu');
+      Check(Length(TVectArtPathLayer(D[1]).Vertices)=3,
+        'Right click must not delete a point');
+      Check(Editor.ContextTarget(400,300,SnapPath,VertexIndex,
+        SegmentIndex,SegmentT) and (VertexIndex=1),
+        'Road vertex menu target');
+      Check(Editor.ExecuteContextEdit(SnapPath,VertexIndex,SegmentIndex,
+        SegmentT,True),'Delete road vertex from menu');
       Check(Length(TVectArtPathLayer(D[1]).Vertices)=2,'Point not removed');
       H.Undo; Check(Length(TVectArtPathLayer(D[1]).Vertices)=3,'Point deletion undo');
       H.Undo; H.Undo;

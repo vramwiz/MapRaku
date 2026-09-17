@@ -7,9 +7,14 @@ uses
   System.Classes, System.Types, Vcl.Controls, MapRakuDocument,
   MapRakuEditorState;
 
+const
+  MAPRAKU_TOOL_SELECTED_COLOR = $00CE7818; // 明るい青。地図プリセットとも共用する。
+  MAPRAKU_TOOL_SELECTED_BORDER = $00FFCC6C;
+
 type
   TVectArtToolPaletteControl = class(TCustomControl)
   private
+    FDocument: TVectArtDocument;
     FEditorState: TVectArtEditorState;
     function ButtonRect(Index: Integer): TRect;
     function ButtonSelected(Index: Integer): Boolean;
@@ -18,6 +23,7 @@ type
     procedure DrawButton(Index: Integer);
     procedure DrawColorSwatch;
     procedure SetEditorState(const Value: TVectArtEditorState);
+    procedure SetDocument(const Value: TVectArtDocument);
   protected
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState;
       X, Y: Integer); override;
@@ -27,12 +33,13 @@ type
     procedure RefreshState;
     property EditorState: TVectArtEditorState read FEditorState
       write SetEditorState;
+    property Document: TVectArtDocument read FDocument write SetDocument;
   end;
 
 implementation
 
 uses
-  Vcl.Graphics, Winapi.Windows, VectArtDarkPopupMenu;
+  Vcl.Graphics, Winapi.Windows;
 
 const
   BUTTON_SIZE = 40;
@@ -41,7 +48,6 @@ const
   COLOR_SWATCH_SIZE = 28;
   COLOR_BACKGROUND = TColor($00252525);
   COLOR_BUTTON = TColor($002D2D2D);
-  COLOR_SELECTED = VECTART_DARK_MENU_ACTIVE_COLOR;
   COLOR_ICON = TColor($00E0E0E0);
   COLOR_SHAPE_FILL = TColor($00808080);
 
@@ -140,6 +146,8 @@ begin
   Result := False;
   if FEditorState = nil then
     Exit;
+  if FEditorState.ActiveMapPreset >= 0 then
+    Exit;
   Tool := ButtonTool(Index);
   if Tool = vetRectangle then
     Result := FEditorState.CurrentTool in [vetRectangleLine, vetRectangle]
@@ -202,10 +210,17 @@ begin
   if FEditorState <> nil then
     VertexKind := FEditorState.NextVertexKind;
   if Selected then
-    Canvas.Brush.Color := COLOR_SELECTED
+    Canvas.Brush.Color := MAPRAKU_TOOL_SELECTED_COLOR
   else
     Canvas.Brush.Color := COLOR_BUTTON;
   Canvas.FillRect(Bounds);
+  if Selected then
+  begin
+    Canvas.Pen.Color := MAPRAKU_TOOL_SELECTED_BORDER;
+    Canvas.Pen.Width := 2;
+    Canvas.Brush.Style := bsClear;
+    Canvas.Rectangle(Bounds);
+  end;
   Canvas.Pen.Color := COLOR_ICON;
   Canvas.Font.Color := COLOR_ICON;
   Canvas.Pen.Width := 1;
@@ -316,6 +331,7 @@ end;
 procedure TVectArtToolPaletteControl.DrawColorSwatch;
 var
   Bounds: TRect;
+  FromSelectedObject: Boolean;
 begin
   Bounds := ColorSwatchRect;
   Canvas.Brush.Style := bsSolid;
@@ -326,7 +342,39 @@ begin
   Canvas.FillRect(Bounds);
   InflateRect(Bounds, -1, -1);
   if FEditorState <> nil then
-    Canvas.Brush.Color := ColorToRGB(FEditorState.CreationColor)
+  begin
+    if (FEditorState.CurrentTool <> vetSelect) and (FDocument <> nil) and
+      (FDocument.CanvasLayer <> nil) and
+      ((FEditorState.MapElement = 'jr') or
+       (FEditorState.MapElement = 'rail')) then
+    begin
+      if FEditorState.MapElement = 'jr' then
+      begin
+        Canvas.Brush.Color := ColorToRGB(FDocument.CanvasLayer.JrPrimaryColor);
+        Canvas.FillRect(Rect(Bounds.Left,Bounds.Top,
+          (Bounds.Left+Bounds.Right) div 2,Bounds.Bottom));
+        Canvas.Brush.Color := ColorToRGB(FDocument.CanvasLayer.JrSecondaryColor);
+      end
+      else
+      begin
+        Canvas.Brush.Color := ColorToRGB(FDocument.CanvasLayer.RailPrimaryColor);
+        Canvas.FillRect(Rect(Bounds.Left,Bounds.Top,
+          (Bounds.Left+Bounds.Right) div 2,Bounds.Bottom));
+        Canvas.Brush.Color := ColorToRGB(FDocument.CanvasLayer.RailSecondaryColor);
+      end;
+      Canvas.FillRect(Rect((Bounds.Left+Bounds.Right) div 2,Bounds.Top,
+        Bounds.Right,Bounds.Bottom));
+      Canvas.Brush.Style := bsClear;
+      Exit;
+    end;
+    if (FEditorState.CurrentTool <> vetSelect) and
+      ((FEditorState.MapElement = 'road') or
+       (FEditorState.MapElement = 'river')) then
+      Canvas.Brush.Color := ColorToRGB(
+        FEditorState.MapPlacementColor(FDocument,FromSelectedObject))
+    else
+      Canvas.Brush.Color := ColorToRGB(FEditorState.CreationColor);
+  end
   else
     Canvas.Brush.Color := clBlack;
   Canvas.FillRect(Bounds);
@@ -347,6 +395,7 @@ begin
       begin
         FEditorState.PendingSymbol := -1;
         FEditorState.MapElement := '';
+        FEditorState.ActiveMapPreset := -1;
         FEditorState.ActivateTool(ButtonTool(I));
         Break;
       end;
@@ -385,6 +434,13 @@ procedure TVectArtToolPaletteControl.SetEditorState(
   const Value: TVectArtEditorState);
 begin
   FEditorState := Value;
+  RefreshState;
+end;
+
+procedure TVectArtToolPaletteControl.SetDocument(
+  const Value: TVectArtDocument);
+begin
+  FDocument := Value;
   RefreshState;
 end;
 

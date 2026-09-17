@@ -683,6 +683,7 @@ procedure RenderVectArtLayers(const RenderLayers: TArray<TVectArtLayer>;
   InputTextOutlineColor: TColor; MapPass: Integer; const OutputCanvas: ISkCanvas;
   Crossings: TMapCrossingRenderContext);
 var
+  CanvasSettings: TVectArtCanvasLayer;
   ArcEndPoint: TPointF;
   ArcEndTangent: TPointF;
   ArcLayer: TMapRakuArcLayer;
@@ -1133,7 +1134,10 @@ begin
       if PathLayer.Closed then
         PathBuilder.Close;
       Path := PathBuilder.Detach;
-      if DrawMapPath(Canvas, Path, PathLayer, PathLayer.Opacity * OpacityMultiplier, MapPass) then
+      if Crossings <> nil then CanvasSettings := Crossings.CanvasSettings
+      else CanvasSettings := nil;
+      if DrawMapPath(Canvas, Path, PathLayer, CanvasSettings,
+        PathLayer.Opacity * OpacityMultiplier, MapPass) then
         Continue;
       StrokeWidth := Max(PathLayer.StrokeWidth, MinimumStrokeWidth);
       ApplyMapRakuPaintStyle(StrokePaint, PathLayer,

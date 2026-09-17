@@ -30,6 +30,12 @@ type
     function MouseMove(Shift: TShiftState; X,Y: Integer): Boolean;
     function MouseUp: Boolean;
     function KeyDown(Key: Word): Boolean;
+    // 右クリック地点の頂点または区間を特定し、メニュー実行まで対象を固定する。
+    function ContextTarget(X,Y: Integer; out Layer: TVectArtPathLayer;
+      out VertexIndex, SegmentIndex: Integer; out SegmentT: Single): Boolean;
+    function ExecuteContextEdit(Layer: TVectArtPathLayer;
+      VertexIndex, SegmentIndex: Integer; SegmentT: Single;
+      DeleteVertex: Boolean): Boolean;
     procedure Draw(Canvas: TCustomCanvas);
   end;
 implementation
@@ -113,18 +119,18 @@ begin
   end;
 end;
 function TMapPathEditor.MouseDown(Button:TMouseButton; Shift:TShiftState; X,Y:Integer):Boolean;
-var V:TArray<TMapRakuVertex>; I,J,BestIndex:Integer; P,Q:TPoint; A:TPointF;
-  Points:TArray<TPointF>; Pair:TArray<TMapRakuVertex>; Best,D,T:Single; L:TVectArtPathLayer;
+var V:TArray<TMapRakuVertex>; I:Integer; P:TPoint; A:TPointF;
+  L:TVectArtPathLayer;
 begin
   Result:=False; if Length(FCandidates)=0 then Exit;
-  if not (Button in [mbLeft,mbRight]) then Exit;
+  if Button<>mbLeft then Exit;
   if not FDragging then begin
     L:=PickLayer(X,Y); if L=nil then Exit;
     if L<>FLayer then FVertex:=-1;
     FLayer:=L;
   end;
-  V:=FLayer.Vertices; BeginEdit; FHandle:=0;
-  if (FVertex>=0) and (FVertex<Length(V)) and (Button=mbLeft) then
+  V:=FLayer.Vertices; FHandle:=0;
+  if (FVertex>=0) and (FVertex<Length(V)) then
     for I:=1 to 2 do begin
       if I=1 then A:=V[FVertex].Position+V[FVertex].IncomingControl
       else A:=V[FVertex].Position+V[FVertex].OutgoingControl;
@@ -133,36 +139,80 @@ begin
         (Hypot(A.X-V[FVertex].Position.X,A.Y-V[FVertex].Position.Y)>1E-6) and
         (((I=1) and (FVertex>0)) or ((I=2) and (FVertex<High(V)))) and
         (Hypot(X-P.X,Y-P.Y)<7) then begin
-        FHandle:=I; FDragging:=True; Exit(True);
+        BeginEdit; FHandle:=I; FDragging:=True; Exit(True);
       end;
     end;
   for I:=0 to High(V) do begin
     P:=ScreenPoint(V[I].Position);
     if Hypot(X-P.X,Y-P.Y)<14 then begin
       FVertex:=I;
-      if Button=mbRight then begin
-        if DeleteMapRakuPathVertex(V,I) then begin FLayer.Vertices:=V; FVertex:=-1; Commit; end;
-      end else FDragging:=True;
+      BeginEdit; FDragging:=True;
       Exit(True);
     end;
   end;
-  if Button<>mbLeft then Exit;
-  Best:=7; BestIndex:=-1; T:=0;
+end;
+
+function TMapPathEditor.ContextTarget(X,Y: Integer;
+  out Layer: TVectArtPathLayer; out VertexIndex, SegmentIndex: Integer;
+  out SegmentT: Single): Boolean;
+var
+  V:TArray<TMapRakuVertex>; I,J:Integer; P,Q:TPoint; A:TPointF;
+  Points:TArray<TPointF>; Pair:TArray<TMapRakuVertex>; D,Best,U:Single;
+begin
+  Layer:=PickLayer(X,Y); VertexIndex:=-1; SegmentIndex:=-1; SegmentT:=0;
+  Result:=Layer<>nil;
+  if not Result then Exit;
+  V:=Layer.Vertices; Best:=14;
+  for I:=0 to High(V) do begin
+    P:=ScreenPoint(V[I].Position); D:=Hypot(X-P.X,Y-P.Y);
+    if D<Best then begin Best:=D; VertexIndex:=I; end;
+  end;
+  if VertexIndex>=0 then Exit;
+  Best:=7;
   for I:=0 to High(V)-1 do begin
     Pair:=[V[I],V[I+1]]; Points:=FlattenMapRakuPathVertices(Pair,64);
     for J:=0 to High(Points)-1 do begin
       P:=ScreenPoint(Points[J]); Q:=ScreenPoint(Points[J+1]);
       A:=PointF(Q.X-P.X,Q.Y-P.Y);
-      D:=EnsureRange(((X-P.X)*A.X+(Y-P.Y)*A.Y)/Max(1,Sqr(A.X)+Sqr(A.Y)),0.0,1.0);
-      if Hypot(X-P.X-D*A.X,Y-P.Y-D*A.Y)<Best then begin
-        Best:=Hypot(X-P.X-D*A.X,Y-P.Y-D*A.Y); BestIndex:=I;
-        T:=(J+D)/Max(1,Length(Points)-1);
+      U:=EnsureRange(((X-P.X)*A.X+(Y-P.Y)*A.Y)/
+        Max(1,Sqr(A.X)+Sqr(A.Y)),0.0,1.0);
+      D:=Hypot(X-P.X-U*A.X,Y-P.Y-U*A.Y);
+      if D<Best then begin
+        Best:=D; SegmentIndex:=I;
+        SegmentT:=(J+U)/Max(1,Length(Points)-1);
       end;
     end;
   end;
-  if BestIndex>=0 then begin
-    FVertex:=InsertMapRakuPathVertex(V,BestIndex,T); FLayer.Vertices:=V; Commit; Result:=True;
+  Result:=SegmentIndex>=0;
+  if not Result then Layer:=nil;
+end;
+
+function TMapPathEditor.ExecuteContextEdit(Layer: TVectArtPathLayer;
+  VertexIndex, SegmentIndex: Integer; SegmentT: Single;
+  DeleteVertex: Boolean): Boolean;
+var
+  I:Integer; V:TArray<TMapRakuVertex>;
+begin
+  Result:=False;
+  if (Layer=nil) or Layer.Locked or not Layer.Transform.IsIdentity then Exit;
+  for I:=0 to High(FCandidates) do
+    if FCandidates[I]=Layer then begin Result:=True; Break; end;
+  if not Result then Exit;
+  Result:=False; V:=Layer.Vertices;
+  if DeleteVertex then begin
+    if (VertexIndex<0) or (Length(V)<=2) then Exit;
+  end else if (SegmentIndex<0) or (SegmentIndex>=High(V)) then Exit;
+  FLayer:=Layer; BeginEdit;
+  if DeleteVertex then Result:=DeleteMapRakuPathVertex(V,VertexIndex)
+  else begin
+    FVertex:=InsertMapRakuPathVertex(V,SegmentIndex,SegmentT);
+    Result:=FVertex>=0;
   end;
+  if Result then begin
+    Layer.Vertices:=V;
+    if DeleteVertex then FVertex:=-1;
+    Commit;
+  end else FreeAndNil(FEditSession);
 end;
 function TMapPathEditor.MouseMove(Shift:TShiftState; X,Y:Integer):Boolean;
 var V:TArray<TMapRakuVertex>; P,T,Snapped:TPointF; Path,NewHoverLayer:TVectArtPathLayer;

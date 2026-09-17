@@ -12,6 +12,7 @@ type
   private
     FColors: TArray<TColor>;                    // 新しく確定した順のRGB色。文書やレイヤーは所有しない。
     FOffset: Integer;                           // ホイールで表示する履歴の先頭位置。
+    FSquareCells: Boolean;
     FOnSelect: TMapRakuHistoryColorEvent; // 色適用は所有元のピッカーへ委譲する。
     function CellRect(Index: Integer): TRect;
     procedure CollectLayer(Layer: TVectArtLayer);
@@ -30,6 +31,7 @@ type
     function Colors: TArray<TColor>;
     // 選択色を通知するだけで、文書・Undo・ピッカー状態は変更しない。
     property OnSelect: TMapRakuHistoryColorEvent read FOnSelect write FOnSelect;
+    property SquareCells: Boolean read FSquareCells write FSquareCells;
   end;
 
 implementation
@@ -121,9 +123,23 @@ end;
 
 function TMapRakuColorHistory.CellRect(Index: Integer): TRect;
 var
-  Row, Gap, LabelHeight, CellHeight: Integer;
+  Row, Column, Gap, LabelHeight, CellHeight, CellSize: Integer;
 begin
   Gap := MulDiv(2, CurrentPPI, 96);
+  if FSquareCells then
+  begin
+    // 設定用の広いピッカーでは、履歴と基本色を同じ正方形で揃える。
+    LabelHeight := MulDiv(19, CurrentPPI, 96);
+    CellSize := Max(Min((ClientWidth - 7 * Gap) div COLUMN_COUNT,
+      (ClientHeight - LabelHeight - 4 * Gap) div 4), 1);
+    Row := Index div COLUMN_COUNT;
+    Column := Index mod COLUMN_COUNT;
+    Result := Rect(Column * (CellSize + Gap),
+      LabelHeight + Row * (CellSize + Gap) + Ord(Row >= 2) * Gap,
+      Column * (CellSize + Gap) + CellSize,
+      LabelHeight + Row * (CellSize + Gap) + Ord(Row >= 2) * Gap + CellSize);
+    Exit;
+  end;
   LabelHeight := MulDiv(14, CurrentPPI, 96);
   CellHeight := Max((ClientHeight - LabelHeight - Gap) div 4, 1);
   Row := Index div COLUMN_COUNT;
@@ -141,7 +157,10 @@ begin
   Canvas.Brush.Color := TColor($00212121);
   Canvas.FillRect(ClientRect);
   Canvas.Font.Color := clSilver;
-  Canvas.Font.Height := -MulDiv(11, CurrentPPI, 96);
+  if FSquareCells then
+    Canvas.Font.Height := -MulDiv(13, CurrentPPI, 96)
+  else
+    Canvas.Font.Height := -MulDiv(11, CurrentPPI, 96);
   Canvas.TextOut(0, 0, '履歴 / 基本色');
   for I := 0 to 31 do
   begin

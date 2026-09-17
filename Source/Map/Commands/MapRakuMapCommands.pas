@@ -1,7 +1,7 @@
 ﻿// 地図経路の挿入とグループからの取り出しを、オブジェクトの寿命を保って履歴化する。
 unit MapRakuMapCommands;
 interface
-uses MapRakuDocument, MapRakuEditHistory, MapRakuEditorState;
+uses Vcl.Graphics, MapRakuDocument, MapRakuEditHistory, MapRakuEditorState;
 procedure InsertMapPath(Document: TVectArtDocument; History: TVectArtEditHistory;
   const Data: TVectArtPathData; ConnectStart: Boolean = False;
   ConnectEnd: Boolean = False; EndpointTolerance: Single = 0);
@@ -14,9 +14,19 @@ procedure SetMapStairStepCount(Document:TVectArtDocument;
   History:TVectArtEditHistory; Layer:TVectArtPathLayer; StepCount:Integer);
 procedure DetachMapChild(Document: TVectArtDocument; History: TVectArtEditHistory;
   State: TVectArtEditorState);
+// 選択中の道路・川の色を配置プリセットへ登録し、必要なら同種の既存経路へ一括適用する。
+procedure ApplyMapColorPreset(Document: TVectArtDocument;
+  History: TVectArtEditHistory; Source: TVectArtPathLayer;
+  ApplyExisting: Boolean);
+procedure SetMapPlacementPreset(Document: TVectArtDocument;
+  History: TVectArtEditHistory; const Kind: string; Color: TColor;
+  ApplyExisting: Boolean = False);
+procedure SetMapRailPalette(Document: TVectArtDocument;
+  History: TVectArtEditHistory; JrPrimary, JrSecondary,
+  RailPrimary, RailSecondary: TColor);
 function IsMapTree(Layer: TVectArtLayer): Boolean;
 implementation
-uses System.SysUtils, System.Math, System.Types, Vcl.Graphics,
+uses System.SysUtils, System.Math, System.Types,
   MapRakuEditCommands, MapRakuPathEditSession, MapRakuPathSnap;
 type
   TInsertMap = class(TVectArtEditCommand)
@@ -70,11 +80,179 @@ type
       ParentIndex:Integer; const Data:TVectArtPathData);
     destructor Destroy; override; procedure Execute; override; procedure Undo; override;
   end;
+  TMapColorSnapshot = record
+    Path: TVectArtPathLayer;
+    Color: TColor;
+    OverrideColor: Boolean;
+  end;
+  TMapColorPresetCommand = class(TVectArtEditCommand)
+  private
+    FDocument: TVectArtDocument;
+    FKind: string;
+    FOldPreset, FNewPreset: TColor;
+    FItems: TArray<TMapColorSnapshot>;
+    procedure Collect(Layer: TVectArtLayer);
+  public
+    constructor Create(Document: TVectArtDocument; const Kind: string;
+      Color: TColor; ApplyExisting: Boolean);
+    procedure Execute; override;
+    procedure Undo; override;
+  end;
+  TMapRailPaletteCommand = class(TVectArtEditCommand)
+  private
+    FDocument: TVectArtDocument;
+    FOld, FNew: array[0..3] of TColor;
+    procedure Apply(const Colors: array of TColor);
+  public
+    constructor Create(Document: TVectArtDocument; JrPrimary, JrSecondary,
+      RailPrimary, RailSecondary: TColor);
+    procedure Execute; override;
+    procedure Undo; override;
+  end;
+
+constructor TMapRailPaletteCommand.Create(Document: TVectArtDocument;
+  JrPrimary, JrSecondary, RailPrimary, RailSecondary: TColor);
+begin
+  inherited Create;
+  FDocument := Document;
+  FOld[0] := Document.CanvasLayer.JrPrimaryColor;
+  FOld[1] := Document.CanvasLayer.JrSecondaryColor;
+  FOld[2] := Document.CanvasLayer.RailPrimaryColor;
+  FOld[3] := Document.CanvasLayer.RailSecondaryColor;
+  FNew[0] := JrPrimary; FNew[1] := JrSecondary;
+  FNew[2] := RailPrimary; FNew[3] := RailSecondary;
+end;
+
+procedure TMapRailPaletteCommand.Apply(const Colors: array of TColor);
+begin
+  FDocument.CanvasLayer.JrPrimaryColor := Colors[0];
+  FDocument.CanvasLayer.JrSecondaryColor := Colors[1];
+  FDocument.CanvasLayer.RailPrimaryColor := Colors[2];
+  FDocument.CanvasLayer.RailSecondaryColor := Colors[3];
+  FDocument.Changed;
+end;
+
+procedure TMapRailPaletteCommand.Execute;
+begin Apply(FNew); end;
+
+procedure TMapRailPaletteCommand.Undo;
+begin Apply(FOld); end;
+
+procedure SetMapRailPalette(Document: TVectArtDocument;
+  History: TVectArtEditHistory; JrPrimary, JrSecondary,
+  RailPrimary, RailSecondary: TColor);
+var Command: TMapRailPaletteCommand;
+begin
+  if Document = nil then Exit;
+  if (Document.CanvasLayer.JrPrimaryColor = JrPrimary) and
+    (Document.CanvasLayer.JrSecondaryColor = JrSecondary) and
+    (Document.CanvasLayer.RailPrimaryColor = RailPrimary) and
+    (Document.CanvasLayer.RailSecondaryColor = RailSecondary) then Exit;
+  Command := TMapRailPaletteCommand.Create(Document,JrPrimary,JrSecondary,
+    RailPrimary,RailSecondary);
+  Command.Execute;
+  if History <> nil then History.AddApplied(Command) else Command.Free;
+end;
+
+constructor TMapColorPresetCommand.Create(Document: TVectArtDocument;
+  const Kind: string; Color: TColor; ApplyExisting: Boolean);
+var I: Integer;
+begin
+  inherited Create;
+  FDocument:=Document;
+  FKind:=Kind;
+  FNewPreset:=Color;
+  if FKind='road' then FOldPreset:=Document.CanvasLayer.RoadPresetColor
+  else FOldPreset:=Document.CanvasLayer.RiverPresetColor;
+  if ApplyExisting then
+    for I:=1 to Document.LayerCount-1 do Collect(Document[I]);
+end;
+
+procedure TMapColorPresetCommand.Collect(Layer: TVectArtLayer);
+var I,N: Integer;
+begin
+  if Layer.Locked then Exit;
+  if Layer is TMapRakuGroupLayer then begin
+    for I:=0 to TMapRakuGroupLayer(Layer).ChildCount-1 do
+      Collect(TMapRakuGroupLayer(Layer)[I]);
+    Exit;
+  end;
+  if not (Layer is TVectArtPathLayer) or
+    (TVectArtPathLayer(Layer).MapElement<>FKind) then Exit;
+  N:=Length(FItems);
+  SetLength(FItems,N+1);
+  FItems[N].Path:=TVectArtPathLayer(Layer);
+  FItems[N].Color:=FItems[N].Path.StrokeColor;
+  FItems[N].OverrideColor:=FItems[N].Path.MapColorOverride;
+end;
+
+procedure TMapColorPresetCommand.Execute;
+var Item: TMapColorSnapshot;
+begin
+  FDocument.BeginUpdate;
+  try
+    if FKind='road' then FDocument.CanvasLayer.RoadPresetColor:=FNewPreset
+    else FDocument.CanvasLayer.RiverPresetColor:=FNewPreset;
+    for Item in FItems do begin
+      Item.Path.StrokeColor:=FNewPreset;
+      Item.Path.MapColorOverride:=False;
+    end;
+    FDocument.Changed;
+  finally FDocument.EndUpdate; end;
+end;
+
+procedure TMapColorPresetCommand.Undo;
+var Item: TMapColorSnapshot;
+begin
+  FDocument.BeginUpdate;
+  try
+    if FKind='road' then FDocument.CanvasLayer.RoadPresetColor:=FOldPreset
+    else FDocument.CanvasLayer.RiverPresetColor:=FOldPreset;
+    for Item in FItems do begin
+      Item.Path.StrokeColor:=Item.Color;
+      Item.Path.MapColorOverride:=Item.OverrideColor;
+    end;
+    FDocument.Changed;
+  finally FDocument.EndUpdate; end;
+end;
+
+procedure ApplyMapColorPreset(Document: TVectArtDocument;
+  History: TVectArtEditHistory; Source: TVectArtPathLayer;
+  ApplyExisting: Boolean);
+var Command: TMapColorPresetCommand;
+begin
+  if (Document=nil) or (Source=nil) or Source.Locked or
+    not ((Source.MapElement='road') or (Source.MapElement='river')) then Exit;
+  if not ApplyExisting and
+    (((Source.MapElement='road') and
+      (Document.CanvasLayer.RoadPresetColor=Source.StrokeColor)) or
+     ((Source.MapElement='river') and
+      (Document.CanvasLayer.RiverPresetColor=Source.StrokeColor))) then Exit;
+  Command:=TMapColorPresetCommand.Create(Document,Source.MapElement,
+    Source.StrokeColor,ApplyExisting);
+  Command.Execute;
+  if History<>nil then History.AddApplied(Command) else Command.Free;
+end;
+
+procedure SetMapPlacementPreset(Document: TVectArtDocument;
+  History: TVectArtEditHistory; const Kind: string; Color: TColor;
+  ApplyExisting: Boolean);
+var Command: TMapColorPresetCommand;
+begin
+  if (Document=nil) or not ((Kind='road') or (Kind='river')) then Exit;
+  if not ApplyExisting and
+    (((Kind='road') and (Document.CanvasLayer.RoadPresetColor=Color)) or
+     ((Kind='river') and (Document.CanvasLayer.RiverPresetColor=Color))) then Exit;
+  Command:=TMapColorPresetCommand.Create(Document,Kind,Color,ApplyExisting);
+  Command.Execute;
+  if History<>nil then History.AddApplied(Command) else Command.Free;
+end;
 
 function NewMapPath(const Data:TVectArtPathData):TVectArtPathLayer;
 begin
   Result:=TVectArtPathLayer.Create(Data.Name,Data.Vertices,Data.Closed);
   Result.MapElement:=Data.MapElement; Result.StrokeWidth:=Data.StrokeWidth;
+  Result.MapColorOverride:=Data.MapColorOverride;
   Result.MapStepCount:=Data.MapStepCount;
   Result.LineCap:=Data.LineCap; Result.StrokeColor:=Data.StrokeColor;
   Result.PaintStyle:=Data.PaintStyle; Result.Opacity:=Data.Opacity;

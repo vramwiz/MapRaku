@@ -109,7 +109,15 @@ begin
   else if FLayer is TMapRakuArcLayer then
     TMapRakuArcLayer(FLayer).StrokeColor := Value
   else if FLayer is TVectArtPathLayer then
-    TVectArtPathLayer(FLayer).StrokeColor := Value
+  begin
+    TVectArtPathLayer(FLayer).StrokeColor := Value;
+    if TVectArtPathLayer(FLayer).MapElement = 'road' then
+      TVectArtPathLayer(FLayer).MapColorOverride :=
+        Value <> FDocument.CanvasLayer.RoadPresetColor
+    else if TVectArtPathLayer(FLayer).MapElement = 'river' then
+      TVectArtPathLayer(FLayer).MapColorOverride :=
+        Value <> FDocument.CanvasLayer.RiverPresetColor;
+  end
   else if FLayer is TMapRakuShapeLayer then
     TMapRakuShapeLayer(FLayer).StrokeColor := Value
   else

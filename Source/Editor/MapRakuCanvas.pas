@@ -179,6 +179,12 @@ type
     property OnObjectContextMenu: TMapRakuObjectContextMenuEvent
       read FOnObjectContextMenu write FOnObjectContextMenu;
     property Zoom: Single read FZoom;
+    function TryPathVertexMenuTarget(const ScreenPoint: TPoint;
+      out Layer: TVectArtPathLayer; out VertexIndex, SegmentIndex: Integer;
+      out SegmentT: Single): Boolean;
+    function ExecutePathVertexMenuEdit(Layer: TVectArtPathLayer;
+      VertexIndex, SegmentIndex: Integer; SegmentT: Single;
+      DeleteVertex: Boolean): Boolean;
   end;
 
 const
@@ -1648,6 +1654,29 @@ begin
   Result := FInteraction.EditHistory;
 end;
 
+function TVectArtCanvasControl.TryPathVertexMenuTarget(
+  const ScreenPoint: TPoint; out Layer: TVectArtPathLayer;
+  out VertexIndex, SegmentIndex: Integer; out SegmentT: Single): Boolean;
+var
+  ClientPoint: TPoint;
+begin
+  CalculateCanvasBounds;
+  FMapPathEditor.Configure(FDocument,FEditorState,EditHistory,FCanvasBounds,FZoom);
+  ClientPoint:=ScreenToClient(ScreenPoint);
+  Result:=FMapPathEditor.ContextTarget(ClientPoint.X,ClientPoint.Y,
+    Layer,VertexIndex,SegmentIndex,SegmentT);
+end;
+
+function TVectArtCanvasControl.ExecutePathVertexMenuEdit(
+  Layer: TVectArtPathLayer; VertexIndex, SegmentIndex: Integer;
+  SegmentT: Single; DeleteVertex: Boolean): Boolean;
+begin
+  FMapPathEditor.Configure(FDocument,FEditorState,EditHistory,FCanvasBounds,FZoom);
+  Result:=FMapPathEditor.ExecuteContextEdit(Layer,VertexIndex,SegmentIndex,
+    SegmentT,DeleteVertex);
+  if Result then Invalidate;
+end;
+
 procedure TVectArtCanvasControl.MouseDown(Button: TMouseButton;
   Shift: TShiftState; X, Y: Integer);
 var
@@ -1662,6 +1691,9 @@ var
   TextLayerIndex: Integer;
   VertexCaptureNeeded: Boolean;
   LogicalPointValid: Boolean;
+  PathMenuLayer: TVectArtPathLayer;
+  PathMenuVertex, PathMenuSegment: Integer;
+  PathMenuT: Single;
 begin
   FPointerPosition := Point(X, Y);
   FPointerInside := PtInRect(ClientRect, FPointerPosition);
@@ -1673,6 +1705,7 @@ begin
       PlaceMapSymbol(FDocument, EditHistory, FEditorState.PendingSymbol,
         FEditorState.PendingSymbolLabel, LogicalPoint, not (ssAlt in Shift));
       FEditorState.PendingSymbol := -1;
+      FEditorState.ActiveMapPreset := -1;
       Invalidate;
     end;
     Exit;
@@ -1733,7 +1766,10 @@ begin
   begin
     CalculateCanvasBounds;
     ConfigureInteraction;
-    if FInteraction.MouseDown(Button, Shift, X, Y) then
+    // 地図経路の右クリックは頂点を直接削除せず、位置付きメニューへ渡す。
+    if not FMapPathEditor.ContextTarget(X,Y,PathMenuLayer,
+      PathMenuVertex,PathMenuSegment,PathMenuT) and
+      FInteraction.MouseDown(Button, Shift, X, Y) then
     begin
       Invalidate;
       Exit;
@@ -1743,8 +1779,9 @@ begin
         [vetSelect, vetLine, vetPath, vetShape, vetTextPath]) then Exit;
     LogicalPointValid := TryClientPointToLogical(Point(X, Y), LogicalPoint);
     LayerIndex := FInteraction.LayerAt(X, Y);
-    if SelectMapRakuContextMenuTarget(FDocument, FEditorState,
-      LayerIndex, LogicalPoint, LogicalPointValid) and
+    if (((LayerIndex<=0) and (PathMenuLayer<>nil)) or
+      SelectMapRakuContextMenuTarget(FDocument, FEditorState,
+        LayerIndex, LogicalPoint, LogicalPointValid)) and
       Assigned(FOnObjectContextMenu) then
     begin
       FOnObjectContextMenu(Self, ClientToScreen(Point(X, Y)),
@@ -2352,6 +2389,20 @@ begin
   FRenderCache.Update(FDocument, Width, Height, PreviewStrokeWidth,
     InputTextLayer, FTextInputOutlineColor, FZoomPreviewActive,
     FInteraction.Moving or FTransformInteraction.Moving);
+end;
+
+function CreationPathPreviewColor(State: TVectArtEditorState;
+  Document: TVectArtDocument): TColor;
+var FromSelectedObject: Boolean;
+begin
+  if (State.MapElement = 'road') or (State.MapElement = 'river') then
+    Result := State.MapPlacementColor(Document,FromSelectedObject)
+  else if (Document <> nil) and (State.MapElement = 'jr') then
+    Result := Document.CanvasLayer.JrPrimaryColor
+  else if (Document <> nil) and (State.MapElement = 'rail') then
+    Result := Document.CanvasLayer.RailPrimaryColor
+  else
+    Result := State.LineStrokeColor;
 end;
 
 procedure TVectArtCanvasControl.PaintDirect2D;
@@ -3020,7 +3071,7 @@ begin
       end;
       if FShapeCreation.PreviewLine(LineStart, LineEnd) then
         DrawStyledPreviewLine(Direct2DCanvas, LineStart, LineEnd,
-          FEditorState.LineStrokeColor,
+          CreationPathPreviewColor(FEditorState,FDocument),
           FEditorState.LineStrokeWidth * FZoom,
           FEditorState.LineMifStrokeStyle, FEditorState.LineCap);
       if FShapeCreation.PreviewPath(PathPreview) then
@@ -3028,12 +3079,12 @@ begin
         PathWidthScales := FShapeCreation.PreviewWidthScales;
         if Length(PathWidthScales) = Length(PathPreview) then
           DrawVariableWidthPreview(Direct2DCanvas, PathPreview,
-            PathWidthScales, FEditorState.LineStrokeColor,
+            PathWidthScales, CreationPathPreviewColor(FEditorState,FDocument),
             FEditorState.LineStrokeWidth * FZoom)
         else if (FEditorState <> nil) and
           (FEditorState.CurrentTool in [vetFreehand, vetPath]) then
           DrawOverlayPolyline(Direct2DCanvas, PathPreview,
-            FEditorState.LineStrokeColor, psSolid,
+            CreationPathPreviewColor(FEditorState,FDocument), psSolid,
             Max(Round(FEditorState.LineStrokeWidth * FZoom), 1) + 2,
             Max(Round(FEditorState.LineStrokeWidth * FZoom), 1))
         else
@@ -3670,19 +3721,20 @@ begin
   end;
   if FShapeCreation.PreviewLine(LineStart, LineEnd) then
     DrawStyledPreviewLine(Canvas, LineStart, LineEnd,
-      FEditorState.LineStrokeColor, FEditorState.LineStrokeWidth * FZoom,
+      CreationPathPreviewColor(FEditorState,FDocument),
+      FEditorState.LineStrokeWidth * FZoom,
       FEditorState.LineMifStrokeStyle, FEditorState.LineCap);
   if FShapeCreation.PreviewPath(PathPreview) then
   begin
     PathWidthScales := FShapeCreation.PreviewWidthScales;
     if Length(PathWidthScales) = Length(PathPreview) then
       DrawVariableWidthPreview(Canvas, PathPreview, PathWidthScales,
-        FEditorState.LineStrokeColor,
+        CreationPathPreviewColor(FEditorState,FDocument),
         FEditorState.LineStrokeWidth * FZoom)
     else if (FEditorState <> nil) and
       (FEditorState.CurrentTool in [vetFreehand, vetPath]) then
       DrawOverlayPolyline(Canvas, PathPreview,
-        FEditorState.LineStrokeColor, psSolid,
+        CreationPathPreviewColor(FEditorState,FDocument), psSolid,
         Max(Round(FEditorState.LineStrokeWidth * FZoom), 1) + 2,
         Max(Round(FEditorState.LineStrokeWidth * FZoom), 1))
     else

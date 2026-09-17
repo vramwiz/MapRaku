@@ -7,7 +7,7 @@ uses
   MapRakuDocument, MapRakuEditHistory;
 
 type
-  // ツールバーから選択する4種類のShape領域演算。
+  // 編集メニューから選択する4種類のShape領域演算。
   TMapRakuShapeBooleanOperation = (slsboUnion, slsboSubtract,
     slsboIntersect, slsboXor);
 

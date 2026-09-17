@@ -499,6 +499,7 @@ begin
     TVectArtPathLayer(Result).MifStrokeStyle := Path.MifStrokeStyle;
     TVectArtPathLayer(Result).StrokeColor := Path.StrokeColor;
     TVectArtPathLayer(Result).MapElement := Path.MapElement;
+    TVectArtPathLayer(Result).MapColorOverride := Path.MapColorOverride;
     TVectArtPathLayer(Result).StrokeWidth := Path.StrokeWidth;
     TVectArtPathLayer(Result).WidthPoints := Path.WidthPoints;
   end

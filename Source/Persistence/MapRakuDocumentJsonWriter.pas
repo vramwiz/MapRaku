@@ -274,6 +274,18 @@ begin
     CanvasJson.AddPair('backgroundColor',
       TJSONNumber.Create(Integer(Canvas.BackgroundColor)));
     CanvasJson.AddPair('transparent', TJSONBool.Create(Canvas.Transparent));
+    CanvasJson.AddPair('roadPresetColor',
+      TJSONNumber.Create(Integer(Canvas.RoadPresetColor)));
+    CanvasJson.AddPair('riverPresetColor',
+      TJSONNumber.Create(Integer(Canvas.RiverPresetColor)));
+    CanvasJson.AddPair('jrPrimaryColor',
+      TJSONNumber.Create(Integer(Canvas.JrPrimaryColor)));
+    CanvasJson.AddPair('jrSecondaryColor',
+      TJSONNumber.Create(Integer(Canvas.JrSecondaryColor)));
+    CanvasJson.AddPair('railPrimaryColor',
+      TJSONNumber.Create(Integer(Canvas.RailPrimaryColor)));
+    CanvasJson.AddPair('railSecondaryColor',
+      TJSONNumber.Create(Integer(Canvas.RailSecondaryColor)));
     Root.AddPair('canvas', CanvasJson);
 
     LayersJson := TJSONArray.Create;
@@ -470,6 +482,8 @@ begin
         PathJson.AddPair('type', 'path');
         PathJson.AddPair('name', Path.Name);
         PathJson.AddPair('mapElement', Path.MapElement);
+        PathJson.AddPair('mapColorOverride',
+          TJSONBool.Create(Path.MapColorOverride));
         PathJson.AddPair('mapStepCount',TJSONNumber.Create(Path.MapStepCount));
         PathJson.AddPair('closed', TJSONBool.Create(Path.Closed));
         PathJson.AddPair('opacity', TJSONNumber.Create(Path.Opacity));

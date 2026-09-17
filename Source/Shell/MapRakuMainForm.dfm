@@ -2203,7 +2203,7 @@ object MainForm: TMainForm
     Left = 0
     Top = 0
     Width = 1180
-    Height = 30
+    Height = 42
     Align = alTop
     BevelOuter = bvNone
     Color = 2236962
@@ -2214,7 +2214,7 @@ object MainForm: TMainForm
       Left = 0
       Top = 0
       Width = 239
-      Height = 30
+      Height = 15
       Align = alLeft
       Caption = 'File     Edit                    Object     Layout     Help'
       Font.Charset = DEFAULT_CHARSET
@@ -2224,13 +2224,12 @@ object MainForm: TMainForm
       Font.Style = []
       ParentFont = False
       Layout = tlCenter
-      ExplicitHeight = 15
     end
     object pnlViewMenuButton: TPanel
       Left = 92
       Top = 0
       Width = 44
-      Height = 30
+      Height = 42
       BevelOuter = bvNone
       Caption = #34920#31034
       Color = 2236962
@@ -2244,35 +2243,6 @@ object MainForm: TMainForm
       TabOrder = 0
     end
   end
-  object pnlShortcutBar: TPanel
-    Left = 0
-    Top = 30
-    Width = 1180
-    Height = 42
-    Align = alTop
-    BevelOuter = bvNone
-    Color = 2631720
-    ParentBackground = False
-    TabOrder = 1
-    ExplicitWidth = 1178
-    object lblShortcutItems: TLabel
-      Left = 0
-      Top = 0
-      Width = 1180
-      Height = 42
-      Align = alClient
-      Caption = 'Shortcuts:  New   Open   Save   Undo   Redo'
-      Font.Charset = DEFAULT_CHARSET
-      Font.Color = 15132390
-      Font.Height = -12
-      Font.Name = 'Segoe UI'
-      Font.Style = []
-      ParentFont = False
-      Layout = tlCenter
-      ExplicitWidth = 228
-      ExplicitHeight = 15
-    end
-  end
   object pnlStatusBar: TPanel
     Left = 0
     Top = 696
@@ -2282,14 +2252,14 @@ object MainForm: TMainForm
     BevelOuter = bvNone
     Color = 2236962
     ParentBackground = False
-    TabOrder = 2
+    TabOrder = 1
     ExplicitTop = 688
     ExplicitWidth = 1178
     object lblStatus: TLabel
       Left = 0
       Top = 0
-      Width = 1180
-      Height = 24
+      Width = 144
+      Height = 15
       Align = alClient
       Caption = 'Ready   Canvas: 1920 x 1080'
       Font.Charset = DEFAULT_CHARSET
@@ -2299,20 +2269,19 @@ object MainForm: TMainForm
       Font.Style = []
       ParentFont = False
       Layout = tlCenter
-      ExplicitWidth = 144
-      ExplicitHeight = 15
     end
   end
   object pnlWorkspace: TPanel
     Left = 0
-    Top = 72
+    Top = 42
     Width = 1180
-    Height = 624
+    Height = 654
     Align = alClient
     BevelOuter = bvNone
     Color = 1710618
     ParentBackground = False
     TabOrder = 3
+    ExplicitTop = 72
     ExplicitWidth = 1178
     ExplicitHeight = 616
     object splLeftRegion: TSplitter
@@ -2415,7 +2384,7 @@ object MainForm: TMainForm
     BevelOuter = bvNone
     Color = 3158064
     ParentBackground = False
-    TabOrder = 4
+    TabOrder = 2
     Visible = False
     object pnlLayoutEditMenuItem: TPanel
       Left = 0

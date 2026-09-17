@@ -1,36 +1,36 @@
-﻿// Selects a canvas resolution from common presets without owning document state.
-unit MapRakuCanvasSettingsDialog;
+﻿unit MapRakuCanvasSettingsDialog;
+
+// キャンバス設定を編集し、確定した値だけを呼び出し側へ返す。
 
 interface
 
 uses
-  System.Classes;
+  System.Classes, Vcl.Graphics, MapRakuDocument;
 
-// Returns the selected resolution only when the user confirms the dialog.
+type
+  TMapRakuCanvasColorSettings = record
+    DarkMap: Boolean;
+    Colors: array[0..5] of TColor; // 道路、川、JR本体、JR模様、私鉄線、私鉄枕木。
+    ColorChanged: array[0..5] of Boolean;
+    ApplyRoadExisting: Boolean;
+    ApplyRiverExisting: Boolean;
+  end;
+
+// キャンセル時は文書に反映せず、確定時だけ選択値を返す。
 function ExecuteCanvasSettingsDialog(AOwner: TComponent;
-  CurrentWidth, CurrentHeight: Integer; CurrentDarkMap: Boolean;
+  CurrentWidth, CurrentHeight: Integer; Canvas: TVectArtCanvasLayer;
   out SelectedWidth, SelectedHeight: Integer;
-  out SelectedDarkMap: Boolean): Boolean;
+  out Settings: TMapRakuCanvasColorSettings): Boolean;
 
 implementation
 
 uses
-  System.SysUtils, System.Types, Vcl.Controls, Vcl.Forms, Vcl.Graphics,
-  Vcl.StdCtrls, Vcl.ExtCtrls,
+  System.SysUtils, System.Types, Vcl.Controls, Vcl.Forms,
+  Vcl.StdCtrls, Vcl.ExtCtrls, MapRakuDarkDialogControls,
+  MapRakuCanvasColorDialog,
   Winapi.Dwmapi, Winapi.Messages, Winapi.UxTheme, Winapi.Windows;
 
 const
-  COLOR_BACKGROUND = TColor($00282828);
-  COLOR_BUTTON_BORDER = TColor($00606060);
-  COLOR_BUTTON_FOCUS = TColor($00D69C4A);
-  COLOR_BUTTON_PRIMARY = TColor($009C630E);
-  COLOR_BUTTON_PRIMARY_HOVER = TColor($00BB7711);
-  COLOR_BUTTON_PRIMARY_PRESSED = TColor($007D4F0B);
-  COLOR_BUTTON_SECONDARY = TColor($00383838);
-  COLOR_BUTTON_SECONDARY_HOVER = TColor($00484848);
-  COLOR_BUTTON_SECONDARY_PRESSED = TColor($00282828);
-  COLOR_CONTROL = TColor($00303030);
-  COLOR_TEXT = TColor($00E6E6E6);
   DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 
 type
@@ -39,172 +39,43 @@ type
     Height: Integer;
   end;
 
-  TDarkDialogButton = class(TCustomControl)
-  private
-    FModalResult: TModalResult;
-    FMouseOver: Boolean;
-    FPressed: Boolean;
-    FPrimary: Boolean;
-    procedure CMMouseEnter(var Message: TMessage); message CM_MOUSEENTER;
-    procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
-  protected
-    procedure Click; override;
-    procedure KeyDown(var Key: Word; Shift: TShiftState); override;
-    procedure MouseDown(Button: TMouseButton; Shift: TShiftState;
-      X, Y: Integer); override;
-    procedure MouseUp(Button: TMouseButton; Shift: TShiftState;
-      X, Y: Integer); override;
-    procedure Paint; override;
-    procedure WMKillFocus(var Message: TWMKillFocus); message WM_KILLFOCUS;
-    procedure WMSetFocus(var Message: TWMSetFocus); message WM_SETFOCUS;
-  public
-    constructor Create(AOwner: TComponent); override;
-    property Caption;
-    property ModalResult: TModalResult read FModalResult write FModalResult;
-    property Primary: Boolean read FPrimary write FPrimary;
-  end;
-
   TCanvasSettingsForm = class(TForm)
   private
     FCancelButton: TDarkDialogButton;
     FOkButton: TDarkDialogButton;
     FResolutionList: TListBox;
     FThemeGroup: TComboBox;
+    FCanvasTab, FColorTab: TDarkDialogButton;
+    FCanvasPage, FColorPage: TPanel;
+    FColorPanels: array[0..5] of TPanel;
+    FColorValues: array[0..5] of TColor;
+    FColorChanged: array[0..5] of Boolean;
+    FApplyRoad, FApplyRiver: TDarkDialogCheckBox;
+    FOldThemeIndex: Integer;
     FResolutions: TArray<TCanvasResolution>;
     procedure AddResolution(AWidth, AHeight: Integer);
+    procedure CreatePageShell;
+    procedure CreateResolutionPage(CurrentWidth, CurrentHeight: Integer);
+    procedure CreateThemeSelector;
+    procedure CreateColorRows(Canvas: TVectArtCanvasLayer);
+    procedure CreateApplyOptions;
+    procedure CreateDialogButtons;
     procedure ApplyDarkMode(Sender: TObject);
     procedure CMDialogKey(var Message: TCMDialogKey); message CM_DIALOGKEY;
     procedure ResolutionListDblClick(Sender: TObject);
+    procedure ColorPanelClick(Sender: TObject);
+    procedure PageClick(Sender: TObject);
+    procedure ShowPage(ColorPage: Boolean);
+    procedure ThemeChanged(Sender: TObject);
+    procedure UpdateColorPanel(Index: Integer);
     procedure ThemeDrawItem(Control: TWinControl; Index: Integer;
       Rect: TRect; State: TOwnerDrawState);
   public
     constructor CreateForResolution(AOwner: TComponent;
-      CurrentWidth, CurrentHeight: Integer);
+      CurrentWidth, CurrentHeight: Integer; Canvas: TVectArtCanvasLayer);
     function SelectedResolution(out AWidth, AHeight: Integer): Boolean;
-    function SelectedDarkMap: Boolean;
+    function SelectedSettings: TMapRakuCanvasColorSettings;
   end;
-
-{ TDarkDialogButton }
-
-procedure TDarkDialogButton.Click;
-var
-  ParentForm: TCustomForm;
-begin
-  inherited Click;
-  ParentForm := GetParentForm(Self);
-  if (ParentForm <> nil) and (FModalResult <> mrNone) then
-    ParentForm.ModalResult := FModalResult;
-end;
-
-procedure TDarkDialogButton.CMMouseEnter(var Message: TMessage);
-begin
-  FMouseOver := True;
-  Invalidate;
-end;
-
-procedure TDarkDialogButton.CMMouseLeave(var Message: TMessage);
-begin
-  FMouseOver := False;
-  FPressed := False;
-  Invalidate;
-end;
-
-constructor TDarkDialogButton.Create(AOwner: TComponent);
-begin
-  inherited Create(AOwner);
-  TabStop := True;
-  DoubleBuffered := True;
-  Font.Name := 'Segoe UI';
-  Font.Height := -12;
-  Font.Color := COLOR_TEXT;
-end;
-
-procedure TDarkDialogButton.KeyDown(var Key: Word; Shift: TShiftState);
-begin
-  if (Key = VK_RETURN) or (Key = VK_SPACE) then
-  begin
-    Click;
-    Key := 0;
-  end;
-  inherited KeyDown(Key, Shift);
-end;
-
-procedure TDarkDialogButton.MouseDown(Button: TMouseButton;
-  Shift: TShiftState; X, Y: Integer);
-begin
-  if Button = mbLeft then
-  begin
-    SetFocus;
-    FPressed := True;
-    Invalidate;
-  end;
-  inherited MouseDown(Button, Shift, X, Y);
-end;
-
-procedure TDarkDialogButton.MouseUp(Button: TMouseButton;
-  Shift: TShiftState; X, Y: Integer);
-var
-  Activate: Boolean;
-begin
-  Activate := (Button = mbLeft) and FPressed and PtInRect(ClientRect,
-    Point(X, Y));
-  FPressed := False;
-  Invalidate;
-  if Activate then
-    Click;
-  inherited MouseUp(Button, Shift, X, Y);
-end;
-
-procedure TDarkDialogButton.Paint;
-var
-  BackgroundColor: TColor;
-  Bounds: TRect;
-begin
-  if FPrimary then
-    if FPressed then
-      BackgroundColor := COLOR_BUTTON_PRIMARY_PRESSED
-    else if FMouseOver then
-      BackgroundColor := COLOR_BUTTON_PRIMARY_HOVER
-    else
-      BackgroundColor := COLOR_BUTTON_PRIMARY
-  else if FPressed then
-    BackgroundColor := COLOR_BUTTON_SECONDARY_PRESSED
-  else if FMouseOver then
-    BackgroundColor := COLOR_BUTTON_SECONDARY_HOVER
-  else
-    BackgroundColor := COLOR_BUTTON_SECONDARY;
-
-  Bounds := ClientRect;
-  Dec(Bounds.Right);
-  Dec(Bounds.Bottom);
-  Canvas.Brush.Style := bsSolid;
-  Canvas.Brush.Color := BackgroundColor;
-  Canvas.Pen.Color := COLOR_BUTTON_BORDER;
-  Canvas.Rectangle(Bounds);
-  if Focused then
-  begin
-    InflateRect(Bounds, -2, -2);
-    Canvas.Brush.Style := bsClear;
-    Canvas.Pen.Color := COLOR_BUTTON_FOCUS;
-    Canvas.Rectangle(Bounds);
-  end;
-  Canvas.Brush.Style := bsClear;
-  Canvas.Font.Assign(Font);
-  DrawText(Canvas.Handle, PChar(Caption), Length(Caption), Bounds,
-    DT_CENTER or DT_VCENTER or DT_SINGLELINE);
-end;
-
-procedure TDarkDialogButton.WMKillFocus(var Message: TWMKillFocus);
-begin
-  inherited;
-  Invalidate;
-end;
-
-procedure TDarkDialogButton.WMSetFocus(var Message: TWMSetFocus);
-begin
-  inherited;
-  Invalidate;
-end;
 
 procedure TCanvasSettingsForm.AddResolution(AWidth, AHeight: Integer);
 var
@@ -252,7 +123,60 @@ begin
 end;
 
 constructor TCanvasSettingsForm.CreateForResolution(AOwner: TComponent;
-  CurrentWidth, CurrentHeight: Integer);
+  CurrentWidth, CurrentHeight: Integer; Canvas: TVectArtCanvasLayer);
+begin
+  inherited CreateNew(AOwner);
+  CreatePageShell;
+  CreateResolutionPage(CurrentWidth, CurrentHeight);
+  CreateThemeSelector;
+  CreateColorRows(Canvas);
+  CreateApplyOptions;
+  CreateDialogButtons;
+  ShowPage(False);
+end;
+
+procedure TCanvasSettingsForm.CreatePageShell;
+begin
+  Caption := 'Canvas Settings';
+  BorderStyle := bsDialog;
+  Color := COLOR_BACKGROUND;
+  Font.Color := COLOR_TEXT;
+  Font.Name := 'Segoe UI';
+  Font.Height := -14;
+  ClientWidth := 400;
+  ClientHeight := 470;
+  OnShow := ApplyDarkMode;
+  Position := poOwnerFormCenter;
+
+  FCanvasTab := TDarkDialogButton.Create(Self);
+  FCanvasTab.Parent := Self;
+  FCanvasTab.SetBounds(12,12,184,30);
+  FCanvasTab.Caption := 'キャンバス';
+  FCanvasTab.Tag := 0;
+  FCanvasTab.OnClick := PageClick;
+  FColorTab := TDarkDialogButton.Create(Self);
+  FColorTab.Parent := Self;
+  FColorTab.SetBounds(204,12,184,30);
+  FColorTab.Caption := '色';
+  FColorTab.Tag := 1;
+  FColorTab.OnClick := PageClick;
+  FCanvasPage := TPanel.Create(Self);
+  FCanvasPage.Parent := Self;
+  FCanvasPage.SetBounds(12,45,376,383);
+  FCanvasPage.BevelOuter := bvNone;
+  FCanvasPage.Color := COLOR_BACKGROUND;
+  FCanvasPage.ParentBackground := False;
+  FColorPage := TPanel.Create(Self);
+  FColorPage.Parent := Self;
+  FColorPage.SetBounds(12,45,376,383);
+  FColorPage.BevelOuter := bvNone;
+  FColorPage.Color := COLOR_BACKGROUND;
+  FColorPage.ParentBackground := False;
+
+end;
+
+procedure TCanvasSettingsForm.CreateResolutionPage(CurrentWidth,
+  CurrentHeight: Integer);
 const
   COMMON_RESOLUTIONS: array[0..11] of TCanvasResolution = (
     (Width: 640; Height: 360),
@@ -270,22 +194,12 @@ const
 var
   I: Integer;
 begin
-  inherited CreateNew(AOwner);
-  Caption := 'Canvas Settings';
-  BorderStyle := bsDialog;
-  Color := COLOR_BACKGROUND;
-  Font.Color := COLOR_TEXT;
-  Font.Name := 'Segoe UI';
-  ClientWidth := 300;
-  ClientHeight := 350;
-  OnShow := ApplyDarkMode;
-  Position := poOwnerFormCenter;
-
   FResolutionList := TListBox.Create(Self);
-  FResolutionList.Parent := Self;
-  FResolutionList.SetBounds(12, 12, 276, 210);
+  FResolutionList.Parent := FCanvasPage;
+  FResolutionList.SetBounds(12, 12, 340, 360);
   FResolutionList.Font.Name := 'Segoe UI';
-  FResolutionList.Font.Height := -13;
+  FResolutionList.Font.Height := -16;
+  FResolutionList.ItemHeight := 25;
   FResolutionList.Color := COLOR_CONTROL;
   FResolutionList.Font.Color := COLOR_TEXT;
   FResolutionList.OnDblClick := ResolutionListDblClick;
@@ -300,22 +214,27 @@ begin
   end;
   if FResolutionList.ItemIndex < 0 then
   begin
+    // 任意サイズの文書も設定画面を開いただけでは変更しない。
     AddResolution(CurrentWidth, CurrentHeight);
     FResolutionList.ItemIndex := FResolutionList.Items.Count - 1;
   end;
 
+end;
+
+procedure TCanvasSettingsForm.CreateThemeSelector;
+begin
   with TLabel.Create(Self) do
   begin
-    Parent := Self;
-    SetBounds(12, 230, 276, 20);
+    Parent := FColorPage;
+    SetBounds(12, 12, 340, 20);
     Caption := '地図の配色';
     Font.Name := 'Segoe UI';
     Font.Height := -12;
     Font.Color := COLOR_TEXT;
   end;
   FThemeGroup := TComboBox.Create(Self);
-  FThemeGroup.Parent := Self;
-  FThemeGroup.SetBounds(12, 252, 276, 28);
+  FThemeGroup.Parent := FColorPage;
+  FThemeGroup.SetBounds(12, 34, 340, 28);
   FThemeGroup.Style := csOwnerDrawFixed;
   FThemeGroup.ItemHeight := 22;
   FThemeGroup.Items.Text := '白地図'#13'黒地図';
@@ -325,16 +244,75 @@ begin
   FThemeGroup.Color := COLOR_CONTROL;
   FThemeGroup.OnDrawItem := ThemeDrawItem;
 
+end;
+
+procedure TCanvasSettingsForm.CreateColorRows(Canvas: TVectArtCanvasLayer);
+var
+  I: Integer;
+  ColorNames: array[0..5] of string;
+begin
+  FColorValues[0] := Canvas.RoadPresetColor;
+  FColorValues[1] := Canvas.RiverPresetColor;
+  FColorValues[2] := Canvas.JrPrimaryColor;
+  FColorValues[3] := Canvas.JrSecondaryColor;
+  FColorValues[4] := Canvas.RailPrimaryColor;
+  FColorValues[5] := Canvas.RailSecondaryColor;
+  ColorNames[0] := '道路'; ColorNames[1] := '川';
+  ColorNames[2] := 'JR 本体'; ColorNames[3] := 'JR 模様';
+  ColorNames[4] := '私鉄 線'; ColorNames[5] := '私鉄 枕木';
+  for I := 0 to 5 do
+  begin
+    with TLabel.Create(Self) do
+    begin
+      Parent := FColorPage;
+      SetBounds(12,75+I*43,130,24);
+      Caption := ColorNames[I];
+      Font.Color := COLOR_TEXT;
+    end;
+    FColorPanels[I] := TPanel.Create(Self);
+    FColorPanels[I].Parent := FColorPage;
+    FColorPanels[I].SetBounds(150,70+I*43,202,30);
+    FColorPanels[I].Tag := I;
+    FColorPanels[I].Hint := ColorNames[I];
+    FColorPanels[I].ShowHint := True;
+    FColorPanels[I].Cursor := crHandPoint;
+    FColorPanels[I].OnClick := ColorPanelClick;
+    UpdateColorPanel(I);
+  end;
+end;
+
+procedure TCanvasSettingsForm.CreateApplyOptions;
+begin
+  with TLabel.Create(Self) do
+  begin
+    Parent := FColorPage;
+    SetBounds(12,317,340,20);
+    Caption := 'JR・私鉄の色は同種の既存経路にも反映されます';
+    Font.Color := COLOR_TEXT;
+  end;
+  FApplyRoad := TDarkDialogCheckBox.Create(Self);
+  FApplyRoad.Parent := FColorPage;
+  FApplyRoad.SetBounds(12,338,340,22);
+  FApplyRoad.Caption := '道路：個別色を含む既存経路へ一括適用';
+  FApplyRiver := TDarkDialogCheckBox.Create(Self);
+  FApplyRiver.Parent := FColorPage;
+  FApplyRiver.SetBounds(12,360,340,22);
+  FApplyRiver.Caption := '川：個別色を含む既存経路へ一括適用';
+
+end;
+
+procedure TCanvasSettingsForm.CreateDialogButtons;
+begin
   FOkButton := TDarkDialogButton.Create(Self);
   FOkButton.Parent := Self;
-  FOkButton.SetBounds(132, 310, 75, 28);
+  FOkButton.SetBounds(222, 432, 75, 28);
   FOkButton.Caption := 'OK';
   FOkButton.Primary := True;
   FOkButton.ModalResult := mrOk;
 
   FCancelButton := TDarkDialogButton.Create(Self);
   FCancelButton.Parent := Self;
-  FCancelButton.SetBounds(213, 310, 75, 28);
+  FCancelButton.SetBounds(303, 432, 85, 28);
   FCancelButton.Caption := 'Cancel';
   FCancelButton.ModalResult := mrCancel;
 end;
@@ -343,6 +321,75 @@ procedure TCanvasSettingsForm.ResolutionListDblClick(Sender: TObject);
 begin
   if FResolutionList.ItemIndex >= 0 then
     ModalResult := mrOk;
+end;
+
+procedure TCanvasSettingsForm.UpdateColorPanel(Index: Integer);
+var RGB: TColor;
+begin
+  RGB := ColorToRGB(FColorValues[Index]);
+  FColorPanels[Index].ParentBackground := False;
+  FColorPanels[Index].Color := RGB;
+  if GetRValue(RGB)+GetGValue(RGB)+GetBValue(RGB) > 384 then
+    FColorPanels[Index].Font.Color := clBlack
+  else
+    FColorPanels[Index].Font.Color := clWhite;
+  FColorPanels[Index].Caption := Format('RGB %d, %d, %d',
+    [GetRValue(RGB),GetGValue(RGB),GetBValue(RGB)]);
+end;
+
+procedure TCanvasSettingsForm.ShowPage(ColorPage: Boolean);
+begin
+  FCanvasPage.Visible := not ColorPage;
+  FColorPage.Visible := ColorPage;
+  if ColorPage then FColorPage.BringToFront
+  else FCanvasPage.BringToFront;
+  FCanvasTab.Primary := not ColorPage;
+  FColorTab.Primary := ColorPage;
+  FCanvasTab.Invalidate;
+  FColorTab.Invalidate;
+end;
+
+procedure TCanvasSettingsForm.PageClick(Sender: TObject);
+begin
+  ShowPage(TDarkDialogButton(Sender).Tag = 1);
+end;
+
+procedure TCanvasSettingsForm.ColorPanelClick(Sender: TObject);
+var
+  Index: Integer;
+  SelectedColor: TColor;
+begin
+  Index := TPanel(Sender).Tag;
+  if not SelectCanvasPresetColor(Self, FColorPanels[Index].Hint,
+    FColorValues[Index], SelectedColor) then Exit;
+  FColorValues[Index] := SelectedColor;
+  FColorChanged[Index] := True;
+  UpdateColorPanel(Index);
+end;
+
+procedure TCanvasSettingsForm.ThemeChanged(Sender: TObject);
+const
+  LightColors: array[0..5] of TColor =
+    ($00E4E4E4,$00E8A050,$00222222,clWhite,$00222222,$00222222);
+  DarkColors: array[0..5] of TColor =
+    (clWhite,$00E8A050,clWhite,$00222222,clWhite,clWhite);
+var I: Integer; OldDefault, NewDefault: TColor;
+begin
+  if FOldThemeIndex = FThemeGroup.ItemIndex then Exit;
+  // テーマ切替で手動設定色を上書きしないよう、旧標準色だけを更新する。
+  for I := 0 to 5 do
+  begin
+    if FOldThemeIndex = 1 then OldDefault := DarkColors[I]
+    else OldDefault := LightColors[I];
+    if FThemeGroup.ItemIndex = 1 then NewDefault := DarkColors[I]
+    else NewDefault := LightColors[I];
+    if not FColorChanged[I] and (FColorValues[I] = OldDefault) then
+    begin
+      FColorValues[I] := NewDefault;
+      UpdateColorPanel(I);
+    end;
+  end;
+  FOldThemeIndex := FThemeGroup.ItemIndex;
 end;
 
 procedure TCanvasSettingsForm.ThemeDrawItem(Control: TWinControl;
@@ -368,29 +415,39 @@ begin
   end;
 end;
 
-function TCanvasSettingsForm.SelectedDarkMap: Boolean;
+function TCanvasSettingsForm.SelectedSettings: TMapRakuCanvasColorSettings;
+var I: Integer;
 begin
-  Result := FThemeGroup.ItemIndex = 1;
+  Result.DarkMap := FThemeGroup.ItemIndex = 1;
+  for I := 0 to 5 do
+  begin
+    Result.Colors[I] := FColorValues[I];
+    Result.ColorChanged[I] := FColorChanged[I];
+  end;
+  Result.ApplyRoadExisting := FApplyRoad.Checked;
+  Result.ApplyRiverExisting := FApplyRiver.Checked;
 end;
 
 function ExecuteCanvasSettingsDialog(AOwner: TComponent;
-  CurrentWidth, CurrentHeight: Integer; CurrentDarkMap: Boolean;
+  CurrentWidth, CurrentHeight: Integer; Canvas: TVectArtCanvasLayer;
   out SelectedWidth, SelectedHeight: Integer;
-  out SelectedDarkMap: Boolean): Boolean;
+  out Settings: TMapRakuCanvasColorSettings): Boolean;
 var
   Dialog: TCanvasSettingsForm;
 begin
   Dialog := TCanvasSettingsForm.CreateForResolution(AOwner,
-    CurrentWidth, CurrentHeight);
+    CurrentWidth, CurrentHeight,Canvas);
   try
-    if CurrentDarkMap then
+    if Canvas.BackgroundColor = clBlack then
       Dialog.FThemeGroup.ItemIndex := 1
     else
       Dialog.FThemeGroup.ItemIndex := 0;
+    Dialog.FOldThemeIndex := Dialog.FThemeGroup.ItemIndex;
+    Dialog.FThemeGroup.OnChange := Dialog.ThemeChanged;
     Result := (Dialog.ShowModal = mrOk) and
       Dialog.SelectedResolution(SelectedWidth, SelectedHeight);
     if Result then
-      SelectedDarkMap := Dialog.SelectedDarkMap;
+      Settings := Dialog.SelectedSettings;
   finally
     Dialog.Free;
   end;

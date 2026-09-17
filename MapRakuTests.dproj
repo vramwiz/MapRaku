@@ -122,6 +122,7 @@
         <DCCReference Include="Source\Automation\MapRakuAutomationDocumentCommand.pas"/>
         <DCCReference Include="Source\Editor\Creation\MapRakuPlacementPreview.pas"/>
         <DCCReference Include="Source\ObjectProperties\Color\MapRakuColorHistory.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\MapRakuColorCode.pas"/>
         <DCCReference Include="Source\Shell\MapRakuMainForm.pas">
             <Form>MainForm</Form>
         </DCCReference>
@@ -137,6 +138,8 @@
         <DCCReference Include="Source\Shell\Toolbars\MapRakuTextToolbarOperations.pas"/>
         <DCCReference Include="Source\Shell\Toolbars\MapRakuLineStyleControls.pas"/>
         <DCCReference Include="Source\Shell\MapRakuCanvasSettingsDialog.pas"/>
+        <DCCReference Include="Source\Shell\MapRakuCanvasColorDialog.pas"/>
+        <DCCReference Include="Source\Shell\MapRakuDarkDialogControls.pas"/>
         <DCCReference Include="Source\Core\Geometry\MapRakuProjectiveTransform.pas"/>
         <DCCReference Include="Source\Editor\Interaction\Transform\MapRakuTransformInteraction.pas"/>
         <DCCReference Include="Source\Core\Model\MapRakuDocument.pas"/>

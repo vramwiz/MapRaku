@@ -17,7 +17,12 @@ type
   private
     FPendingSymbolLabel: string;
     FPendingSymbol: Integer;
+    FActiveMapPreset: Integer; // 地図パネルで最後に選んだ配置ツール。-1は通常ツール。
     FMapElement: string;
+    FMapPlacementActive: Boolean;
+    FMapPlacementColor: TColor;
+    FMapPlacementKind: string;
+    FMapPlacementOverride: Boolean;
     FCreationPaintStyle: TMapRakuPaintStyle;
     FCurrentTool: TVectArtEditorTool;
     FLineCap: TVectArtLineCap;
@@ -39,6 +44,7 @@ type
     procedure SetCreationColor(const Value: TColor);
     procedure SetCreationPaintStyle(const Value: TMapRakuPaintStyle);
     procedure SetCurrentTool(const Value: TVectArtEditorTool);
+    procedure SetActiveMapPreset(const Value: Integer);
     procedure SetLineCap(const Value: TVectArtLineCap);
     procedure SetLineMifStrokeStyle(const Value: TVectArtMifStrokeStyle);
     procedure SetLineStrokeWidth(const Value: Single);
@@ -52,6 +58,11 @@ type
     destructor Destroy; override;
     // ツールを選択し、選択済みの組み合わせツールでは線／図形または頂点種別を切り替える。
     procedure ActivateTool(const Value: TVectArtEditorTool);
+    // 道路・川は専用プリセットを優先し、同種の個別色を1件だけ選択中なら引き継ぐ。
+    function MapPlacementColor(Document: TVectArtDocument;
+      out FromSelectedObject: Boolean): TColor;
+    procedure BeginMapPlacement(Document: TVectArtDocument);
+    procedure EndMapPlacement;
     function GetOpenGroupChildren: TArray<TVectArtLayer>;
     function IsGroupInOpenPath(Group: TMapRakuGroupLayer): Boolean;
     function IsOpenGroupChildSelected(Layer: TVectArtLayer): Boolean;
@@ -80,6 +91,8 @@ type
     function OpenGroupChildCount: Integer;
     property PendingSymbolLabel: string read FPendingSymbolLabel write FPendingSymbolLabel;
     property PendingSymbol: Integer read FPendingSymbol write FPendingSymbol;
+    property ActiveMapPreset: Integer read FActiveMapPreset
+      write SetActiveMapPreset;
     property MapElement: string read FMapElement write FMapElement;
     property CurrentTool: TVectArtEditorTool read FCurrentTool
       write SetCurrentTool;
@@ -190,6 +203,7 @@ constructor TVectArtEditorState.Create;
 begin
   inherited Create;
   FPendingSymbol := -1;
+  FActiveMapPreset := -1;
   FOpenGroupChildren := TList<TVectArtLayer>.Create;
   FOpenGroupPath := TList<TMapRakuGroupLayer>.Create;
   FCurrentTool := vetSelect;
@@ -207,6 +221,55 @@ end;
 function TVectArtEditorState.GetCreationColor: TColor;
 begin
   Result := FCreationPaintStyle.SolidColor;
+end;
+
+function TVectArtEditorState.MapPlacementColor(Document: TVectArtDocument;
+  out FromSelectedObject: Boolean): TColor;
+var
+  Indices: TArray<Integer>;
+  Layers: TArray<TVectArtLayer>;
+  Path: TVectArtPathLayer;
+begin
+  FromSelectedObject := False;
+  Result := CreationColor;
+  if (Document = nil) or (Document.CanvasLayer = nil) then Exit;
+  if FMapElement = 'road' then
+    Result := Document.CanvasLayer.RoadPresetColor
+  else if FMapElement = 'river' then
+    Result := Document.CanvasLayer.RiverPresetColor
+  else Exit;
+  if FMapPlacementActive and (FMapPlacementKind = FMapElement) then
+  begin
+    Result := FMapPlacementColor;
+    FromSelectedObject := FMapPlacementOverride;
+    Exit;
+  end;
+  if FCurrentTool = vetSelect then Exit;
+  if (FOpenGroup <> nil) and (OpenGroupChildCount > 0) then
+    Layers := GetOpenGroupChildren
+  else begin
+    Indices := Document.GetSelectedLayerIndices;
+    if Length(Indices) <> 1 then Exit;
+    Layers := [Document[Indices[0]]];
+  end;
+  if (Length(Layers) <> 1) or not (Layers[0] is TVectArtPathLayer) then Exit;
+  Path := TVectArtPathLayer(Layers[0]);
+  if (Path.MapElement <> FMapElement) or not Path.MapColorOverride then Exit;
+  Result := Path.StrokeColor;
+  FromSelectedObject := True;
+end;
+
+procedure TVectArtEditorState.BeginMapPlacement(Document: TVectArtDocument);
+begin
+  FMapPlacementActive := False;
+  FMapPlacementKind := FMapElement;
+  FMapPlacementColor := MapPlacementColor(Document,FMapPlacementOverride);
+  FMapPlacementActive := True;
+end;
+
+procedure TVectArtEditorState.EndMapPlacement;
+begin
+  FMapPlacementActive := False;
 end;
 
 destructor TVectArtEditorState.Destroy;
@@ -669,6 +732,8 @@ begin
   if FCurrentTool = Value then
     Exit;
   FCurrentTool := Value;
+  if Value = vetSelect then
+    FActiveMapPreset := -1;
   if Value <> vetSelect then
   begin
     FSelectedFilter := nil;
@@ -676,6 +741,15 @@ begin
     FSelectedGradientLayer := nil;
     FSelectedGradientStopId := SCREEN_LAYOUT_GRADIENT_STOP_NONE;
   end;
+  if Assigned(FOnChanged) then
+    FOnChanged(Self);
+end;
+
+procedure TVectArtEditorState.SetActiveMapPreset(const Value: Integer);
+begin
+  if FActiveMapPreset = Value then
+    Exit;
+  FActiveMapPreset := Value;
   if Assigned(FOnChanged) then
     FOnChanged(Self);
 end;

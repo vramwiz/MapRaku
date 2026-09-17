@@ -156,6 +156,12 @@ type
   TVectArtCanvasLayer = class(TVectArtLayer)
   private
     FBackgroundColor: TColor;
+    FRoadPresetColor: TColor;
+    FRiverPresetColor: TColor;
+    FJrPrimaryColor: TColor;
+    FJrSecondaryColor: TColor;
+    FRailPrimaryColor: TColor;
+    FRailSecondaryColor: TColor;
     FHeight: Integer;
     FTransparent: Boolean;
     FWidth: Integer;
@@ -163,6 +169,14 @@ type
     constructor Create(AWidth, AHeight: Integer; AColor: TColor);
     property BackgroundColor: TColor read FBackgroundColor
       write FBackgroundColor;
+    property RoadPresetColor: TColor read FRoadPresetColor
+      write FRoadPresetColor;
+    property RiverPresetColor: TColor read FRiverPresetColor
+      write FRiverPresetColor;
+    property JrPrimaryColor: TColor read FJrPrimaryColor write FJrPrimaryColor;
+    property JrSecondaryColor: TColor read FJrSecondaryColor write FJrSecondaryColor;
+    property RailPrimaryColor: TColor read FRailPrimaryColor write FRailPrimaryColor;
+    property RailSecondaryColor: TColor read FRailSecondaryColor write FRailSecondaryColor;
     property Height: Integer read FHeight write FHeight;
     property Transparent: Boolean read FTransparent write FTransparent;
     property Width: Integer read FWidth write FWidth;
@@ -501,6 +515,7 @@ type
   TVectArtPathLayer = class(TVectArtLayer)
   private
     FMapElement: string;
+    FMapColorOverride: Boolean;
     FMapStepCount: Integer;
     FClosed: Boolean;
     FLineCap: TVectArtLineCap;
@@ -537,6 +552,8 @@ type
       TargetIndex: Integer; AdjustTarget: Boolean = True;
       AlignTangents: Boolean = True): Boolean;
     property MapElement: string read FMapElement write FMapElement; // 空文字は通常の線。road / jr / rail / river。
+    property MapColorOverride: Boolean read FMapColorOverride
+      write FMapColorOverride;
     property MapStepCount: Integer read FMapStepCount write FMapStepCount;
     property Closed: Boolean read FClosed write FClosed;
     property LineCap: TVectArtLineCap read FLineCap write FLineCap;
@@ -552,6 +569,7 @@ type
 
   TVectArtPathData = record
     MapElement: string; // 地図経路の種類。空文字は汎用Path。
+    MapColorOverride: Boolean; // 道路・川の色を個別に変更した場合だけTrue。
     MapStepCount: Integer; // 階段の段数。0は長さから自動決定。
     Transform: TArray<Double>; // 復元時にも保持する表示変形。未設定は恒等変換。
     Closed: Boolean;                        // 終点と始点を閉じる状態。
@@ -1127,6 +1145,12 @@ begin
   FWidth := Max(AWidth, 1);
   FHeight := Max(AHeight, 1);
   FBackgroundColor := AColor;
+  FRoadPresetColor := $00E4E4E4;
+  FRiverPresetColor := $00E8A050;
+  FJrPrimaryColor := $00222222;
+  FJrSecondaryColor := clWhite;
+  FRailPrimaryColor := $00222222;
+  FRailSecondaryColor := $00222222;
   FTransparent := False;
 end;
 
@@ -2034,6 +2058,7 @@ begin
   PathLayer.StrokeColor := Data.StrokeColor;
   PathLayer.MifStrokeStyle := Data.MifStrokeStyle;
   PathLayer.MapElement := Data.MapElement;
+  PathLayer.MapColorOverride := Data.MapColorOverride;
   PathLayer.MapStepCount := Max(Data.MapStepCount,0);
   PathLayer.StrokeWidth := Max(Data.StrokeWidth, 0.0);
   PathLayer.WidthPoints := Data.WidthPoints;
@@ -2487,6 +2512,7 @@ begin
   Data.StrokeColor := PathLayer.StrokeColor;
   Data.MifStrokeStyle := PathLayer.MifStrokeStyle;
   Data.MapElement := PathLayer.MapElement;
+  Data.MapColorOverride := PathLayer.MapColorOverride;
   Data.MapStepCount := PathLayer.MapStepCount;
   Data.StrokeWidth := PathLayer.StrokeWidth;
   Data.WidthPoints := PathLayer.WidthPoints;
@@ -3230,6 +3256,13 @@ begin
     SameValue(PathLayer.StrokeWidth, NewWidth) and
     (PathLayer.MifStrokeStyle = Style) then
     Exit;
+  if PathLayer.StrokeColor <> Color then
+  begin
+    if PathLayer.MapElement = 'road' then
+      PathLayer.MapColorOverride := Color <> CanvasLayer.RoadPresetColor
+    else if PathLayer.MapElement = 'river' then
+      PathLayer.MapColorOverride := Color <> CanvasLayer.RiverPresetColor;
+  end;
   PathLayer.StrokeColor := Color;
   PathLayer.StrokeWidth := NewWidth;
   PathLayer.MifStrokeStyle := Style;

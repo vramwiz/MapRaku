@@ -20,7 +20,7 @@ uses
   System.Generics.Collections, System.IOUtils, System.JSON, System.Math,
   System.StrUtils, System.SysUtils, System.Types, Vcl.Graphics, MapRakuFilters,
   MapRakuPaintStyles, MapRakuTextureJson, MapRakuPatternJson,
-  MapRakuProjectiveTransform, MapRakuTheme;
+  MapRakuProjectiveTransform;
 
 const
   DOCUMENT_FORMAT_VERSION = 1;
@@ -862,6 +862,8 @@ begin
           PathValue.Opacity := ReadSingle(LayerJson, 'opacity');
           PathValue.StrokeColor := clBlack;
           PathValue.MapElement := ReadOptionalString(LayerJson, 'mapElement', '');
+          PathValue.MapColorOverride := ReadOptionalBoolean(LayerJson,
+            'mapColorOverride', False);
           PathValue.MapStepCount := 0;
           if LayerJson.GetValue('mapStepCount') is TJSONNumber then
             PathValue.MapStepCount := Max(0,
@@ -874,6 +876,27 @@ begin
           PathValue.LineCap := vlcSquare;
           PathValue.StrokeColor := TColor(ReadInteger(LayerJson,
             'strokeColor'));
+          if LayerJson.GetValue('mapColorOverride') = nil then
+          begin
+            if PathValue.MapElement = 'road' then
+            begin
+              if CanvasJson.GetValue('roadPresetColor') is TJSONNumber then
+                PathValue.MapColorOverride := PathValue.StrokeColor <>
+                  TColor(ReadInteger(CanvasJson,'roadPresetColor'))
+              else if TColor(CanvasColor) = clBlack then
+                PathValue.MapColorOverride := PathValue.StrokeColor <> clWhite
+              else
+                PathValue.MapColorOverride := PathValue.StrokeColor <> $00E4E4E4;
+            end
+            else if PathValue.MapElement = 'river' then
+            begin
+              if CanvasJson.GetValue('riverPresetColor') is TJSONNumber then
+                PathValue.MapColorOverride := PathValue.StrokeColor <>
+                  TColor(ReadInteger(CanvasJson,'riverPresetColor'))
+              else
+                PathValue.MapColorOverride := PathValue.StrokeColor <> $00E8A050;
+            end;
+          end;
           PathValue.StrokeWidth := Max(ReadSingle(LayerJson,
             'strokeWidth'), 0.1);
           MifStrokeStyleValue := ReadInteger(LayerJson, 'strokeStyle');
@@ -1302,6 +1325,31 @@ begin
       Canvas.Width := CanvasWidth;
       Canvas.Height := CanvasHeight;
       Canvas.BackgroundColor := TColor(CanvasColor);
+      if (CanvasJson.GetValue('roadPresetColor') = nil) and
+        (Canvas.BackgroundColor = clBlack) then
+        Canvas.RoadPresetColor := clWhite;
+      if CanvasJson.GetValue('roadPresetColor') is TJSONNumber then
+        Canvas.RoadPresetColor := TColor(ReadInteger(CanvasJson,
+          'roadPresetColor'));
+      if CanvasJson.GetValue('riverPresetColor') is TJSONNumber then
+        Canvas.RiverPresetColor := TColor(ReadInteger(CanvasJson,
+          'riverPresetColor'));
+      if (Canvas.BackgroundColor = clBlack) and
+        (CanvasJson.GetValue('jrPrimaryColor') = nil) then
+      begin
+        Canvas.JrPrimaryColor := clWhite;
+        Canvas.JrSecondaryColor := $00222222;
+        Canvas.RailPrimaryColor := clWhite;
+        Canvas.RailSecondaryColor := clWhite;
+      end;
+      if CanvasJson.GetValue('jrPrimaryColor') is TJSONNumber then
+        Canvas.JrPrimaryColor := TColor(ReadInteger(CanvasJson,'jrPrimaryColor'));
+      if CanvasJson.GetValue('jrSecondaryColor') is TJSONNumber then
+        Canvas.JrSecondaryColor := TColor(ReadInteger(CanvasJson,'jrSecondaryColor'));
+      if CanvasJson.GetValue('railPrimaryColor') is TJSONNumber then
+        Canvas.RailPrimaryColor := TColor(ReadInteger(CanvasJson,'railPrimaryColor'));
+      if CanvasJson.GetValue('railSecondaryColor') is TJSONNumber then
+        Canvas.RailSecondaryColor := TColor(ReadInteger(CanvasJson,'railSecondaryColor'));
       Canvas.Transparent := CanvasTransparent;
       LoadedSelectedIndex := -1;
       for I := 0 to High(RectangleData) do
@@ -1378,8 +1426,6 @@ begin
             ReadString(CrossingJson,'upperObjectId'),
             ReadSingle(CrossingJson,'rangeMargin'));
         end;
-      NormalizeMapRailTheme(Document,
-        Document.CanvasLayer.BackgroundColor=clBlack);
       Document.SelectedIndex := LoadedSelectedIndex;
       Document.Changed;
       Result := True;
