@@ -6,12 +6,6 @@ interface
 uses
   MapRakuDocument, MapRakuEditHistory, MapRakuEditorState, MapRakuCanvas;
 
-const
-  SCREEN_LAYOUT_AUTOMATION_PIPE_SHORT_NAME = 'MapRaku.v1';
-  SCREEN_LAYOUT_AUTOMATION_PIPE_NAME = '\\.\pipe\MapRaku.v1';
-  SCREEN_LAYOUT_AUTOMATION_PROTOCOL = 'MapRaku';
-  SCREEN_LAYOUT_AUTOMATION_VERSION = 1;
-
 // VCLスレッド上で1要求を処理し、必ずJSON応答を返す。
 function HandleMapRakuAutomationRequest(const RequestText: string;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
@@ -22,57 +16,9 @@ implementation
 uses
   System.Hash, System.JSON, System.SysUtils, Vcl.Graphics,
   MapRakuAutomationVisuals, MapRakuAutomationText, MapRakuAutomationLayout,
-  MapRakuAutomationDocumentCommand, MapRakuDocumentJson;
-
-const
-  MAX_REQUEST_CHARS = 4 * 1024 * 1024;
-
-function StateToken(const JsonText: string): string;
-begin
-  Result := 'sha256:' + LowerCase(THashSHA2.GetHashString(JsonText));
-end;
-
-procedure AddHeader(Root: TJSONObject; const Command, Status: string);
-begin
-  Root.AddPair('protocol', SCREEN_LAYOUT_AUTOMATION_PROTOCOL);
-  Root.AddPair('protocol_version', TJSONNumber.Create(
-    SCREEN_LAYOUT_AUTOMATION_VERSION));
-  Root.AddPair('command', Command);
-  Root.AddPair('status', Status);
-end;
-
-function ErrorResponse(const Command, Code, MessageText: string): string;
-var
-  ErrorJson: TJSONObject;
-  Root: TJSONObject;
-begin
-  Root := TJSONObject.Create;
-  try
-    AddHeader(Root, Command, 'error');
-    ErrorJson := TJSONObject.Create;
-    ErrorJson.AddPair('code', Code);
-    ErrorJson.AddPair('message', MessageText);
-    Root.AddPair('error', ErrorJson);
-    Result := Root.ToJSON;
-  finally
-    Root.Free;
-  end;
-end;
-
-function OkResponse(const Command: string; Payload: TJSONPair): string;
-var
-  Root: TJSONObject;
-begin
-  Root := TJSONObject.Create;
-  try
-    AddHeader(Root, Command, 'ok');
-    if Payload <> nil then
-      Root.AddPair(Payload);
-    Result := Root.ToJSON;
-  finally
-    Root.Free;
-  end;
-end;
+  MapRakuAutomationDocumentCommand, MapRakuDocumentJson, MapRakuAutomationWire,
+  MapRakuAutomationBatch, MapRakuAutomationServices, MapRakuAutomationSession,
+  MapRakuAutomationValues, MapRakuAutomationValidation, MapRakuAutomationBlobs;
 
 function JsonString(Root: TJSONObject; const Name: string;
   out Value: string): Boolean;
@@ -115,6 +61,11 @@ begin
     if not TryDeserializeVectArtDocument(Incoming.ToJSON, TempDocument,
       ErrorMessage) then
       Exit;
+    ValidateAutomationMap(TempDocument).Free;
+    if AutomationSession.Conditions <> nil then
+      Require((Num(AutomationSession.Conditions,'canvas_width',0)=TempDocument.CanvasLayer.Width) and
+        (Num(AutomationSession.Conditions,'canvas_height',0)=TempDocument.CanvasLayer.Height),
+        'Clear reference before replacing canvas dimensions.');
     NormalizedJson := SerializeVectArtDocument(TempDocument);
     Result := True;
   finally
@@ -142,10 +93,29 @@ begin
   Commands.Add('replace_document');
   Commands.Add('undo');
   Commands.Add('redo');
+  Commands.Add('get_map_schema');
+  Commands.Add('preview_batch');
+  Commands.Add('apply_batch');
+  Commands.Add('validate_document');
+  Commands.Add('begin_blob');
+  Commands.Add('write_blob');
+  Commands.Add('read_blob');
+  Commands.Add('release_blob');
+  Commands.Add('set_reference');
+  Commands.Add('get_reference');
+  Commands.Add('get_reference_image');
+  Commands.Add('clear_reference');
+  Commands.Add('get_request_result');
+  Commands.Add('save_copy');
+  Commands.Add('preview_file');
+  Commands.Add('load_file');
   ResultJson.AddPair('commands', Commands);
   ResultJson.AddPair('pipe', SCREEN_LAYOUT_AUTOMATION_PIPE_NAME);
   ResultJson.AddPair('max_image_edge', TJSONNumber.Create(2048));
-  ResultJson.AddPair('image_transport', 'local_png_path');
+  ResultJson.AddPair('image_transport', 'pipe_blob_base64');
+  ResultJson.AddPair('max_chunk_bytes', TJSONNumber.Create(AUTOMATION_CHUNK_BYTES));
+  ResultJson.AddPair('max_blob_bytes', TJSONNumber.Create(AUTOMATION_BLOB_BYTES));
+  ResultJson.AddPair('request_id_required_for_mutations', TJSONBool.Create(True));
   ResultJson.AddPair('background_token_supported', TJSONBool.Create(True));
   ResultJson.AddPair('max_request_bytes', TJSONNumber.Create(
     MAX_REQUEST_CHARS));
@@ -197,6 +167,7 @@ var
   ExpectedToken: string;
   NormalizedJson: string;
   ResultJson: TJSONObject;
+  Changed: Boolean;
   ReplaceCommand: TMapRakuAutomationDocumentCommand;
 begin
   CurrentJson := SerializeVectArtDocument(Document);
@@ -212,7 +183,8 @@ begin
     Exit(ErrorResponse(Command, 'apply_required',
       'replace_document requires apply: true.'));
 
-  if Apply and (NormalizedJson <> CurrentJson) then
+  Changed := NormalizedJson <> CurrentJson;
+  if Apply and Changed then
   begin
     if EditorState <> nil then
       EditorState.OpenGroup := nil;
@@ -230,7 +202,7 @@ begin
 
   ResultJson := TJSONObject.Create;
   ResultJson.AddPair('applied', TJSONBool.Create(Apply));
-  ResultJson.AddPair('changed', TJSONBool.Create(NormalizedJson <> CurrentJson));
+  ResultJson.AddPair('changed', TJSONBool.Create(Changed));
   ResultJson.AddPair('state_token', StateToken(NormalizedJson));
   Result := OkResponse(Command, TJSONPair.Create('change', ResultJson));
 end;
@@ -277,8 +249,14 @@ begin
   Result := '';
   if Canvas = nil then
     Exit(ErrorResponse(Command, 'editor_unavailable', 'Canvas is not available.'));
-  if Canvas.TextEditing or Canvas.TransformDragging then
-    Exit(ErrorResponse(Command, 'editor_busy', 'Finish the current text edit or transform first.'));
+  if Canvas.AutomationBusy then
+    Exit(ErrorResponse(Command, 'editor_busy', 'Finish the current placement or edit first.'));
+  if RequireTokens and (AutomationSession.Conditions <> nil) and
+    (Command <> 'clear_reference') and (Command <> 'set_reference') and
+    (Command <> 'undo') and (Command <> 'redo') then
+    if (Num(AutomationSession.Conditions,'canvas_width',0) <> Document.CanvasLayer.Width) or
+      (Num(AutomationSession.Conditions,'canvas_height',0) <> Document.CanvasLayer.Height) then
+      Exit(ErrorResponse(Command,'reference_mapping_changed','Clear or register reference after canvas resize.'));
   if RequireTokens then
     if not JsonString(Root, 'state_token', Token) or
       (Token <> StateToken(SerializeVectArtDocument(Document))) then
@@ -323,7 +301,7 @@ begin
       if not TryDeserializeVectArtDocument(JsonText, Target, ErrorMessage) then
         Exit(ErrorResponse(Command, 'invalid_document', ErrorMessage));
     end;
-    Canvas.CopyReferenceBackground(Background);
+    if Bool(Root,'include_reference',True) then Canvas.CopyReferenceBackground(Background);
     if Preview then
       Images := BuildMapRakuAutomationImages(Target, Background, MaxEdge)
     else
@@ -333,6 +311,7 @@ begin
     Snapshot.AddPair('candidate_state_token', StateToken(JsonText));
     Snapshot.AddPair('applied', TJSONBool.Create(False));
     Result := OkResponse(Command, TJSONPair.Create('snapshot', Snapshot));
+    // OkResponseがPayloadを解放するので、finallyで同じJSONを二重解放しない。
     Snapshot := nil;
   finally
     Snapshot.Free;
@@ -341,84 +320,102 @@ begin
   end;
 end;
 
-function HandleMapRakuAutomationRequest(const RequestText: string;
+function HandleBatch(const Command: string; Root: TJSONObject;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
   EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl): string;
-var
-  Command: string;
-  Json: TJSONValue;
-  Root: TJSONObject;
-  Geometry: TJSONObject;
+var Candidate,Payload: TJSONObject;
 begin
-  Command := '';
-  if TEncoding.UTF8.GetByteCount(RequestText) > MAX_REQUEST_CHARS then
-    Exit(ErrorResponse(Command, 'request_too_large',
-      'The request exceeds the 4 MiB limit.'));
-  if (Document = nil) or (EditHistory = nil) then
-    Exit(ErrorResponse(Command, 'editor_unavailable',
-      'The MapRaku editor is not ready.'));
-  Json := TJSONObject.ParseJSONValue(RequestText);
-  try
-    try
-      if not (Json is TJSONObject) then
-        Exit(ErrorResponse(Command, 'invalid_json',
-          'Request must be a JSON object.'));
-      Root := TJSONObject(Json);
-      if not JsonString(Root, 'command', Command) then
-        Exit(ErrorResponse(Command, 'invalid_command', 'command is required.'));
-      if SameText(Command, 'get_capabilities') then
-        Result := BuildCapabilities(Command)
-      else if SameText(Command, 'get_editor_state') then
-        Result := BuildEditorState(Command, Document, EditHistory)
-      else if SameText(Command, 'get_document') then
-        Result := BuildDocument(Command, Document)
-      else if SameText(Command, 'get_canvas_snapshot') then
-        Result := HandleVisual(Command, Root, Document, Canvas, False)
-      else if SameText(Command, 'render_preview') then
-        Result := HandleVisual(Command, Root, Document, Canvas, True)
-      else if SameText(Command, 'measure_text') then
-        Result := OkResponse(Command, TJSONPair.Create('measurement', MeasureMapRakuAutomationText(Root)))
-      else if SameText(Command, 'list_fonts') then
-        Result := OkResponse(Command, TJSONPair.Create('fonts', MapRakuAutomationFonts))
-      else if SameText(Command, 'get_creation_schema') then
-        Result := OkResponse(Command, TJSONPair.Create('schema', MapRakuAutomationCreationSchema))
-      else if SameText(Command, 'get_layout_geometry') then
-      begin
-        Geometry := MapRakuAutomationGeometry(Document);
-        Geometry.AddPair('state_token', StateToken(SerializeVectArtDocument(Document)));
-        Result := OkResponse(Command, TJSONPair.Create('geometry', Geometry));
-      end
-      else if SameText(Command, 'preview_replace_document') then
-        Result := HandleReplace(Command, Root, Document, EditHistory,
-          EditorState, False)
-      else if SameText(Command, 'replace_document') then
-      begin
-        if Root.GetValue('background_token') <> nil then
-        begin
-          Result := CheckVisualState(Command, Root, Document, Canvas, True);
-          if Result <> '' then Exit;
-        end;
-        Result := HandleReplace(Command, Root, Document, EditHistory,
-          EditorState, True);
-      end
-      else if SameText(Command, 'undo') then
-        Result := HandleHistory(Command, Root, Document, EditHistory,
-          EditorState, True)
-      else if SameText(Command, 'redo') then
-        Result := HandleHistory(Command, Root, Document, EditHistory,
-          EditorState, False)
-      else
-        Result := ErrorResponse(Command, 'unknown_command',
-          'The command is not supported.');
-    except
-      on E: EArgumentException do
-        Result := ErrorResponse(Command, 'invalid_argument', E.Message);
-      on E: Exception do
-        Result := ErrorResponse(Command, 'internal_error', E.Message);
-    end;
-  finally
-    Json.Free;
+  Result := CheckVisualState(Command,Root,Document,Canvas,True);
+  if Result <> '' then Exit;
+  if Command = 'load_file' then Candidate := ReadAutomationFile(Root)
+  else Candidate := BuildAutomationBatch(Document,Root);
+  Root.RemovePair('document').Free;
+  Root.AddPair('document',Candidate);
+  if Command <> 'preview_batch' then
+    Exit(HandleReplace(Command,Root,Document,EditHistory,EditorState,True));
+  Payload := TJSONObject.Create;
+  Payload.AddPair('document',Candidate.Clone as TJSONValue);
+  Payload.AddPair('state_token',StateToken(SerializeVectArtDocument(Document)));
+  Payload.AddPair('applied',TJSONBool.Create(False));
+  Result := OkResponse(Command,TJSONPair.Create('candidate',Payload));
+end;
+
+function HandleQuery(const Command: string; Root: TJSONObject;
+  Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
+  Canvas: TVectArtCanvasControl): string;
+var Geometry: TJSONObject;
+begin
+  Result := '';
+  if Command = 'get_capabilities' then Result := BuildCapabilities(Command)
+  else if Command = 'get_editor_state' then Result := BuildEditorState(Command,Document,EditHistory)
+  else if Command = 'get_document' then Result := BuildDocument(Command,Document)
+  else if Command = 'get_canvas_snapshot' then Result := HandleVisual(Command,Root,Document,Canvas,False)
+  else if Command = 'render_preview' then Result := HandleVisual(Command,Root,Document,Canvas,True)
+  else if Command = 'measure_text' then
+    Result := OkResponse(Command,TJSONPair.Create('measurement',MeasureMapRakuAutomationText(Root)))
+  else if Command = 'list_fonts' then
+    Result := OkResponse(Command,TJSONPair.Create('fonts',MapRakuAutomationFonts))
+  else if Command = 'get_creation_schema' then
+    Result := OkResponse(Command,TJSONPair.Create('schema',MapRakuAutomationCreationSchema))
+  else if Command = 'get_layout_geometry' then begin
+    Geometry := MapRakuAutomationGeometry(Document);
+    Geometry.AddPair('state_token',StateToken(SerializeVectArtDocument(Document)));
+    Result := OkResponse(Command,TJSONPair.Create('geometry',Geometry));
   end;
 end;
 
+function ProcessAutomationRequest(const Command: string; Root: TJSONObject;
+  Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl): string;
+begin
+  if (Document = nil) or (EditHistory = nil) then
+    Exit(ErrorResponse(Command,'editor_unavailable','The MapRaku editor is not ready.'));
+  if AutomationMutation(Command) and (Command <> 'begin_blob') then begin
+    Result := CheckVisualState(Command,Root,Document,Canvas,True);
+    if Result <> '' then Exit;
+    Require(ApplyRequested(Root),'Mutation requires apply: true.');
+  end;
+  if (Command = 'preview_batch') or (Command = 'apply_batch') or (Command = 'load_file') then
+    Exit(HandleBatch(Command,Root,Document,EditHistory,EditorState,Canvas));
+  Result := HandleAutomationService(Command,Root,Document,Canvas);
+  if Result <> '' then Exit;
+  Result := HandleQuery(Command,Root,Document,EditHistory,Canvas);
+  if Result <> '' then Exit;
+  if (Command = 'replace_document') or (Command = 'preview_replace_document') then
+    Result := HandleReplace(Command,Root,Document,EditHistory,EditorState,Command='replace_document')
+  else if (Command = 'undo') or (Command = 'redo') then
+    Result := HandleHistory(Command,Root,Document,EditHistory,EditorState,Command='undo')
+  else Result := ErrorResponse(Command,'unknown_command','The command is not supported.');
+end;
+// 再送判定を状態検査より先に行い、適用成功後に応答だけ失われた場合も同じ結果を返す。
+function HandleMapRakuAutomationRequest(const RequestText: string;
+  Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl): string;
+var Root: TJSONValue; Command,Id: string; Mutating: Boolean;
+begin
+  Command := '';
+  if TEncoding.UTF8.GetByteCount(RequestText) > MAX_REQUEST_CHARS then
+    Exit(ErrorResponse(Command,'request_too_large','The request exceeds 4 MiB.'));
+  Root := TJSONObject.ParseJSONValue(RequestText);
+  try
+    try
+      Command := LowerCase(Str(Obj(Root),'command'));
+      Mutating := AutomationMutation(Command);
+      Id := Str(Obj(Root),'request_id');
+      if Mutating and AutomationSession.Lookup(Id,RequestText,Result) then Exit;
+      try
+        Result := ProcessAutomationRequest(Command,Obj(Root),Document,EditHistory,EditorState,Canvas);
+      except
+        on E: EArgumentException do Result := ErrorResponse(Command,'invalid_argument',E.Message);
+        on E: Exception do Result := ErrorResponse(Command,'internal_error',E.Message);
+      end;
+      if Mutating then AutomationSession.Remember(Id,RequestText,Result);
+    except
+      on E: EArgumentException do Result := ErrorResponse(Command,'invalid_argument',E.Message);
+      on E: Exception do Result := ErrorResponse(Command,'internal_error',E.Message);
+    end;
+  finally
+    Root.Free;
+  end;
+end;
 end.

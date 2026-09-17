@@ -14,7 +14,7 @@ implementation
 
 uses
   System.SysUtils, System.Types, Vcl.Graphics, MapRakuLayerGeometry,
-  MapRakuDocumentJson, MapRakuFilters;
+  MapRakuDocumentJson, MapRakuFilters, MapRakuAutomationSchema;
 
 procedure AppendGeometry(Layer: TVectArtLayer; const Path: string;
   ParentVisible: Boolean; Entries: TJSONArray);
@@ -27,6 +27,9 @@ begin
   Entry := TJSONObject.Create;
   Entries.AddElement(Entry);
   Entry.AddPair('layer_path', Path);
+  Entry.AddPair('id', Layer.PersistentId);
+  if Layer is TVectArtPathLayer then
+    Entry.AddPair('map_element',TVectArtPathLayer(Layer).MapElement);
   Entry.AddPair('name', Layer.Name);
   Entry.AddPair('visible', TJSONBool.Create(Layer.Visible and ParentVisible));
   Entry.AddPair('locked', TJSONBool.Create(Layer.Locked));
@@ -102,6 +105,7 @@ begin
       Examples.InsertLayer(4, Shape);
       Shape.FillColor := clYellow;
       Result.AddPair('schema_kind', 'creation_examples');
+      Result.AddPair('map',AutomationMapSchema);
       Result.AddPair('scope', 'text_with_outline_and_shadow,rectangle,ellipse,shape');
       Result.AddPair('usage', 'Copy needed layers into the latest snapshot; preserve existing layers and canvas.');
       Result.AddPair('color_encoding', 'Delphi TColor integer: 0x00BBGGRR');

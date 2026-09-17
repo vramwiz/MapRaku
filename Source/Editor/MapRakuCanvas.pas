@@ -167,6 +167,8 @@ type
     function ApplyPathVertexModeToSelection: Boolean;
     // 変形ドラッグ中はホスト側ショートカットによる対象の変更を抑止する。
     function TransformDragging: Boolean;
+    // 未確定の作図やドラッグが保持するレイヤー参照を、外部の文書置換から保護する。
+    function AutomationBusy: Boolean;
     // 変形前の状態へ戻してマウスキャプチャを解放する。
     procedure CancelTransformDrag;
     // 配置先の分類を変える場合も右クリックと同じ規則で配置を終了する。
@@ -1642,6 +1644,12 @@ end;
 function TVectArtCanvasControl.TransformDragging: Boolean;
 begin
   Result := FTransformInteraction.Active;
+end;
+
+function TVectArtCanvasControl.AutomationBusy: Boolean;
+begin
+  Result := FTextEditing or MouseCapture or FShapeCreation.Active or
+    FTransformInteraction.Active or FInteraction.Dragging or FGroupDrag.Active;
 end;
 
 procedure TVectArtCanvasControl.CancelTransformDrag;

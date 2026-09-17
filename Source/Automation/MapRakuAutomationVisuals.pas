@@ -1,5 +1,5 @@
 ﻿// AI向けの背景・合成画像を通常レンダラーで生成し、座標対応とともに返す。
-// Document、選択、Undoを変更せず、PNGはOS一時フォルダーへ独立保存する。
+// Document、選択、Undoを変更せず、PNGをパイプ転送用のメモリへ保存する。
 unit MapRakuAutomationVisuals;
 
 interface
@@ -14,15 +14,32 @@ function BuildMapRakuAutomationImages(Document: TVectArtDocument;
 implementation
 
 uses
-  System.SysUtils, System.IOUtils, System.Math, Winapi.Windows,
-  Vcl.Imaging.pngimage, MapRakuRenderer;
+  System.SysUtils, System.Classes, System.Math, Winapi.Windows,
+  Vcl.Imaging.pngimage, MapRakuRenderer, MapRakuAutomationSession;
 
-procedure SaveBufferPng(Buffer: TVectArtRenderBuffer; const FileName: string);
+procedure ReleaseImages(Images: TJSONObject);
+var Pair: TJSONPair; Request: TJSONObject; Value: TJSONValue;
+begin
+  // 途中の描画失敗でも転送領域を占有し続けないよう、既に生成した画像だけを解放する。
+  for Pair in Images do
+    if Pair.JsonValue is TJSONObject then begin
+      Value := TJSONObject(Pair.JsonValue).GetValue('blob_id');
+      if Value = nil then Continue;
+      Request := TJSONObject.Create;
+      try
+        Request.AddPair('blob_id',Value.Value);
+        AutomationSession.Blobs.Handle('release_blob',Request).Free;
+      finally Request.Free; end;
+    end;
+end;
+
+function BufferPng(Buffer: TVectArtRenderBuffer): TJSONObject;
 var
   Png: TPngImage;
   Row, Alpha: PByte;
   Pixel: PVectArtRgbaPixel;
   X, Y: Integer;
+  Stream: TBytesStream;
 begin
   Png := TPngImage.CreateBlank(COLOR_RGBALPHA, 8, Buffer.Width, Buffer.Height);
   try
@@ -40,7 +57,13 @@ begin
         Inc(Pixel);
       end;
     end;
-    Png.SaveToFile(FileName);
+    Stream := TBytesStream.Create;
+    try
+      Png.SaveToStream(Stream);
+      Result := AutomationSession.Blobs.Store(Copy(Stream.Bytes,0,Stream.Size),'image/png');
+    finally
+      Stream.Free;
+    end;
   finally
     Png.Free;
   end;
@@ -55,8 +78,6 @@ var
   X, Y, SX, SY, W, H, CW, CH: Integer;
   Color: COLORREF;
   Scale: Double;
-  Folder, Prefix: string;
-  Id: TGUID;
   Mapping: TJSONObject;
 begin
   if (MaxEdge < 64) or (MaxEdge > 2048) then
@@ -104,18 +125,11 @@ begin
         Inc(Pixel);
       end;
     end;
-    CreateGUID(Id);
-    Folder := TPath.Combine(TPath.GetTempPath, 'MapRaku-Automation');
-    ForceDirectories(Folder);
-    Prefix := TPath.Combine(Folder, GUIDToString(Id));
-    SaveBufferPng(Base, Prefix + '-base.png');
+    Result.AddPair('base_image', BufferPng(Base));
     RenderVectArtDocument(Document, Overlay, W, H);
-    SaveBufferPng(Overlay, Prefix + '-overlay.png');
+    Result.AddPair('overlay_image', BufferPng(Overlay));
     CompositeVectArtRgba(Overlay, Base.Data, W, H);
-    SaveBufferPng(Base, Prefix + '-composite.png');
-    Result.AddPair('base_image_path', Prefix + '-base.png');
-    Result.AddPair('overlay_image_path', Prefix + '-overlay.png');
-    Result.AddPair('composite_image_path', Prefix + '-composite.png');
+    Result.AddPair('composite_image', BufferPng(Base));
     Result.AddPair('has_reference_background', TJSONBool.Create(Background.Width > 0));
     Result.AddPair('pixel_width', TJSONNumber.Create(W));
     Result.AddPair('pixel_height', TJSONNumber.Create(H));
@@ -132,6 +146,7 @@ begin
     Mapping.AddPair('document_y_offset', TJSONNumber.Create(-CH / 2));
     Result.AddPair('mapping', Mapping);
   except
+    ReleaseImages(Result);
     Result.Free;
     Overlay.Free;
     Base.Free;

@@ -43,7 +43,7 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base)'!=''">
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Vcl;Winapi;$(DCC_Namespace)</DCC_Namespace>
-        <DCC_UnitSearchPath>Lib\ColorPicker;Lib\DarkMenu;Lib\HorizontalTrackBar;Lib\InputMethod;Lib\Pipe;Lib\ShortcutAction;Lib\TextRenderer;Lib\VerticalScrollBar;Source\Automation;Source\Core\Commands;Source\Core\Commands\Path;Source\Core\Commands\Layer;Source\Core\Commands\Layer\Group;Source\Core\Commands\Layer\Transform;Source\Core\Commands\Shape;Source\Core\Commands\Text;Source\Core\Geometry;Source\Core\Geometry\Shape;Source\Core\Geometry\Text;Source\Core\Model;Source\Core\Model\Pattern;Source\Editor;Source\Editor\Creation;Source\Editor\Interaction;Source\Editor\Interaction\Filter;Source\Editor\Interaction\Gradient;Source\Editor\Interaction\Group;Source\Editor\Interaction\Shape;Source\Editor\Interaction\Text;Source\Editor\Interaction\Texture;Source\Editor\Interaction\Transform;Source\Layers;Source\Layers\Clipboard;Source\Layers\List;Source\Layers\Operations;Source\Layout;Source\Map\Commands;Source\Map\UI;Source\Map\Crossings;Source\Map\Editing;Source\Map\Rendering\Paths;Source\Map\Rendering\Crossings;Source\Map\Appearance;Source\Map\Export;Source\Map\Symbols;Source\ObjectProperties;Source\ObjectProperties\Color;Source\ObjectProperties\Color\Pattern;Source\ObjectProperties\Color\Texture;Source\ObjectProperties\Filters;Source\ObjectProperties\Geometry;Source\Persistence;Source\Rendering;Source\Rendering\Buffer;Source\Rendering\Cache;Source\Rendering\Overlay;Source\Rendering\Paint;Source\Rendering\Paint\Pattern;Source\Rendering\Paint\Stroke;Source\Shell;Source\Shell\Menus;Source\Shell\Toolbars;Source\ToolPalette;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>Lib\ColorPicker;Lib\DarkMenu;Lib\HorizontalTrackBar;Lib\InputMethod;Lib\Pipe;Lib\ShortcutAction;Lib\TextRenderer;Lib\VerticalScrollBar;Source\Automation;Source\Automation\Map;Source\Automation\Transport;Source\Core\Commands;Source\Core\Commands\Path;Source\Core\Commands\Layer;Source\Core\Commands\Layer\Group;Source\Core\Commands\Layer\Transform;Source\Core\Commands\Shape;Source\Core\Commands\Text;Source\Core\Geometry;Source\Core\Geometry\Shape;Source\Core\Geometry\Text;Source\Core\Model;Source\Core\Model\Pattern;Source\Editor;Source\Editor\Creation;Source\Editor\Interaction;Source\Editor\Interaction\Filter;Source\Editor\Interaction\Gradient;Source\Editor\Interaction\Group;Source\Editor\Interaction\Shape;Source\Editor\Interaction\Text;Source\Editor\Interaction\Texture;Source\Editor\Interaction\Transform;Source\Layers;Source\Layers\Clipboard;Source\Layers\List;Source\Layers\Operations;Source\Layout;Source\Map\Commands;Source\Map\UI;Source\Map\Crossings;Source\Map\Editing;Source\Map\Rendering\Paths;Source\Map\Rendering\Crossings;Source\Map\Appearance;Source\Map\Export;Source\Map\Symbols;Source\ObjectProperties;Source\ObjectProperties\Color;Source\ObjectProperties\Color\Pattern;Source\ObjectProperties\Color\Texture;Source\ObjectProperties\Filters;Source\ObjectProperties\Geometry;Source\Persistence;Source\Rendering;Source\Rendering\Buffer;Source\Rendering\Cache;Source\Rendering\Overlay;Source\Rendering\Paint;Source\Rendering\Paint\Pattern;Source\Rendering\Paint\Stroke;Source\Shell;Source\Shell\Menus;Source\Shell\Toolbars;Source\ToolPalette;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_ExeOutput>$(MSBuildProjectDirectory)\TestOutput</DCC_ExeOutput>
         <DCC_DcuOutput>.\TestOutput\DCU</DCC_DcuOutput>
         <Manifest_File>$(BDS)\bin\default_app.manifest</Manifest_File>
@@ -116,6 +116,16 @@
         <DCCReference Include="Lib\HorizontalTrackBar\HorizontalTrackBarRenderer.pas"/>
         <DCCReference Include="Lib\HorizontalTrackBar\HorizontalTrackBarControl.pas"/>
         <DCCReference Include="Lib\Pipe\PipeServerTThread.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationBatch.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationFactory.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationSchema.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationValidation.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationValues.pas"/>
+        <DCCReference Include="Source\Automation\Transport\MapRakuAutomationBlobs.pas"/>
+        <DCCReference Include="Source\Automation\Transport\MapRakuAutomationReference.pas"/>
+        <DCCReference Include="Source\Automation\Transport\MapRakuAutomationSession.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationWire.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationServices.pas"/>
         <DCCReference Include="Source\Automation\MapRakuAutomationVisuals.pas"/>
         <DCCReference Include="Source\Automation\MapRakuAutomationText.pas"/>
         <DCCReference Include="Source\Automation\MapRakuAutomationLayout.pas"/>

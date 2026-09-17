@@ -18,7 +18,7 @@ procedure UpdateMapRakuAutomationPipeNotifyWindow(NotifyWindow: HWND);
 implementation
 
 uses
-  System.SysUtils, PipeServerTThread, MapRakuAutomationProtocol;
+  System.SysUtils, PipeServerTThread, MapRakuAutomationProtocol, MapRakuAutomationWire, MapRakuAutomationSession;
 
 const
   PIPE_BUFFER_SIZE = 4 * 1024 * 1024;
@@ -68,6 +68,8 @@ begin
   begin
     FThread.Terminate;
     FThread.ReleaseWait;
+    // 接続済みクライアントが読書きを止めていても、終了待ちでUIを固めない。
+    CancelSynchronousIo(FThread.Handle);
     PipeHandle := CreateFile(PChar(SCREEN_LAYOUT_AUTOMATION_PIPE_NAME),
       GENERIC_READ or GENERIC_WRITE, 0, nil, OPEN_EXISTING, 0, 0);
     if PipeHandle <> INVALID_HANDLE_VALUE then
@@ -83,6 +85,8 @@ procedure TMapRakuAutomationPipeServer.Receive(Sender: TObject;
 begin
   SendStr := HandleMapRakuAutomationRequest(ReceivedStr, FDocument,
     FEditHistory, FEditorState, FCanvas);
+  if TEncoding.UTF8.GetByteCount(SendStr) > PIPE_BUFFER_SIZE then
+    SendStr := ErrorResponse('', 'response_too_large', 'Response exceeds 4 MiB; reduce document size.');
 end;
 
 procedure TMapRakuAutomationPipeServer.ProcessMessage(WParam: WPARAM);
@@ -125,6 +129,7 @@ end;
 procedure StopMapRakuAutomationPipeServer;
 begin
   FreeAndNil(Server);
+  ResetAutomationSession;
 end;
 
 procedure ProcessMapRakuAutomationPipeMessage(WParam: WPARAM);
