@@ -1,7 +1,7 @@
 [
   {
     "id": "VRAMWIZ.SYNC_MapRaku",
-    "name": "SYNC 地図",
+    "name": "地図",
     "type": "汎用プラグイン",
     "summary": "案内図を作成し、ルート上でマーカーを移動表示",
     "description": "https://raw.githubusercontent.com/vramwiz/MapRaku/main/README.md",
@@ -61,7 +61,8 @@
         "release_date": "2026-09-18",
         "file": [
           {
-            "path": "{pluginsDir}/SYNC_MapRaku/SYNC_MapRaku_Filter.auf2"
+            "path": "{pluginsDir}/SYNC_MapRaku/SYNC_MapRaku_Filter.auf2",
+            "XXH3_128": ""
           }
         ]
       }
