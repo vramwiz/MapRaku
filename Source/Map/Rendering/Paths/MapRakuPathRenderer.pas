@@ -13,7 +13,8 @@ function DrawMapPath(const Canvas: ISkCanvas; const Path: ISkPath;
   Opacity: Single; Pass: Integer): Boolean;
 begin
   Result := Layer.MapElement <> '';
-  if Layer.MapElement = 'road' then DrawMapRoad(Canvas, Path, Layer, Opacity, Pass)
+  if (Layer.MapElement = 'road') or (Layer.MapElement = 'route') then
+    DrawMapRoad(Canvas, Path, Layer, Opacity, Pass)
   else if Pass <> 1 then begin
     if (Layer.MapElement = 'jr') or (Layer.MapElement = 'rail') then
       DrawMapRail(Canvas, Path, Layer, Settings, Opacity)

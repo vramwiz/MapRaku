@@ -154,6 +154,7 @@ begin
   if (FEditorState <> nil) and
      (FEditorState.MapElement <> 'road') and
      (FEditorState.MapElement <> 'river') and
+     (FEditorState.MapElement <> 'route') and
      (FEditorState.MapElement <> 'jr') and
      (FEditorState.MapElement <> 'rail') then
     FEditorState.EndMapPlacement;
@@ -445,6 +446,7 @@ begin
     Data.WidthPoints := nil;
   Data.Closed := False;
   Data.MapElement := FEditorState.MapElement;
+  if Data.MapElement='route' then Data.RouteId:=FEditorState.MapRouteId;
   Data.Locked := False;
   Data.LineCap := FEditorState.LineCap;
   Data.Name := NextMapRakuLayerName(FDocument, 'Line');
@@ -452,7 +454,8 @@ begin
   Data.StrokeColor := FEditorState.LineStrokeColor;
   Data.PaintStyle := FEditorState.CreationPaintStyle;
   Data.MapColorOverride := False;
-  if (Data.MapElement = 'road') or (Data.MapElement = 'river') then
+  if (Data.MapElement = 'road') or (Data.MapElement = 'river') or
+     (Data.MapElement = 'route') then
   begin
     Data.StrokeColor := FEditorState.MapPlacementColor(FDocument,
       Data.MapColorOverride);
@@ -467,6 +470,7 @@ begin
     InsertMapPath(FDocument, FEditHistory, Data,FStartConnect,FEndConnect,0.75/FZoom);
     if not (Data.MapElement = 'road') and
        not (Data.MapElement = 'river') and
+       not (Data.MapElement = 'route') and
        not (Data.MapElement = 'jr') and
        not (Data.MapElement = 'rail') then
       FEditorState.CurrentTool := vetSelect;
@@ -516,6 +520,7 @@ begin
       Data.WidthPoints := nil;
   end;
   Data.MapElement := FEditorState.MapElement;
+  if Data.MapElement='route' then Data.RouteId:=FEditorState.MapRouteId;
   Data.Closed := Closed;
   Data.LineCap := FEditorState.LineCap;
   Data.Locked := False;
@@ -524,7 +529,8 @@ begin
   Data.StrokeColor := FEditorState.LineStrokeColor;
   Data.PaintStyle := FEditorState.CreationPaintStyle;
   Data.MapColorOverride := False;
-  if (Data.MapElement = 'road') or (Data.MapElement = 'river') then
+  if (Data.MapElement = 'road') or (Data.MapElement = 'river') or
+     (Data.MapElement = 'route') then
   begin
     Data.StrokeColor := FEditorState.MapPlacementColor(FDocument,
       Data.MapColorOverride);
@@ -1162,6 +1168,7 @@ begin
   FSnapGuides := nil;
   if (FEditorState.MapElement <> 'road') and
      (FEditorState.MapElement <> 'river') and
+     (FEditorState.MapElement <> 'route') and
      (FEditorState.MapElement <> 'jr') and
      (FEditorState.MapElement <> 'rail') then
     FEditorState.EndMapPlacement;
@@ -1283,6 +1290,7 @@ begin
   if (FEditorState.MapElement <> '') and
      (FEditorState.MapElement <> 'road') and
      (FEditorState.MapElement <> 'river') and
+     (FEditorState.MapElement <> 'route') and
      (FEditorState.MapElement <> 'jr') and
      (FEditorState.MapElement <> 'rail') then
     FEditorState.CurrentTool := vetSelect;

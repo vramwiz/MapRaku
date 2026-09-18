@@ -20,6 +20,7 @@ uses
   MapRakuMapPanel,
   MapRakuRecentFiles,
   MapRakuObjectPropertiesFrame, MapRakuToolFrames,
+  MapRakuSymbols,
   MapRakuObjectContextMenu,
   MapRakuTextContextMenu, MapRakuPathContextMenu,
   MapRakuTransformContextMenu,
@@ -82,6 +83,7 @@ type
     FMenuGroup: TVectArtDarkMenuGroup;
     FLayerMenuItem: TPanel;
     FObjectPropertiesMenuItem: TPanel;
+    FRoutePreviewMenuItem: TPanel;
     function ConfirmSave: Boolean;
     procedure FileNewClick(Sender: TObject);
     procedure ActivateToolShortcut(const Tool: TVectArtEditorTool);
@@ -95,6 +97,7 @@ type
     procedure FileSaveClick(Sender: TObject);
     procedure FileSaveAsClick(Sender: TObject);
     procedure RecentFileClick(Sender: TObject);
+    procedure RunRoutePreview;
     procedure ExportClick(Sender: TObject);
     procedure ExportTypeChange(Sender: TObject);
     procedure GeometryPopupDeactivate(Sender: TObject);
@@ -189,9 +192,12 @@ begin
 end;
 
 procedure TMainForm.MapCategoryChanged(Sender: TObject);
+var ErrorText: string;
 begin
   if (FEditorFrame <> nil) and (FEditorFrame.CanvasControl <> nil) then
     FEditorFrame.CanvasControl.EndPlacement;
+  if not ValidateRouteMarkers(FDocument, ErrorText) then
+    lblStatus.Caption := 'ルート設定エラー: ' + ErrorText;
 end;
 
 function ConstrainToMonitor(const Bounds: TRect): TRect;
@@ -333,10 +339,11 @@ begin
   FObjectPropertiesFrame.Context := FDesignerContext;
   FDockManager.OnToolVisibilityChanged := ToolVisibilityChanged;
 
-  pnlViewMenuPopup.Height := MulDiv(128, CurrentPPI, 96);
+  pnlViewMenuPopup.Height := MulDiv(160, CurrentPPI, 96);
   pnlLayoutEditMenuItem.Align := alTop;
   FObjectPropertiesMenuItem := CreateViewMenuItem('Object Properties');
   FLayerMenuItem := CreateViewMenuItem('Layers');
+  FRoutePreviewMenuItem := CreateViewMenuItem('ルートプレビュー    Space');
 
   LayoutFolder := TPath.Combine(TPath.GetDocumentsPath, 'MapRaku');
   if FHosted then
@@ -408,13 +415,16 @@ begin
     if Settings.ColorChanged[1] or Settings.ApplyRiverExisting then
       SetMapPlacementPreset(FDocument,FEditHistory,'river',Settings.Colors[1],
         Settings.ApplyRiverExisting);
+    if Settings.ColorChanged[2] or Settings.ApplyRouteExisting then
+      SetMapPlacementPreset(FDocument,FEditHistory,'route',Settings.Colors[2],
+        Settings.ApplyRouteExisting);
     RailColors[0] := FDocument.CanvasLayer.JrPrimaryColor;
     RailColors[1] := FDocument.CanvasLayer.JrSecondaryColor;
     RailColors[2] := FDocument.CanvasLayer.RailPrimaryColor;
     RailColors[3] := FDocument.CanvasLayer.RailSecondaryColor;
     for I := 0 to 3 do
-      if Settings.ColorChanged[I+2] then
-        RailColors[I] := Settings.Colors[I+2];
+      if Settings.ColorChanged[I+3] then
+        RailColors[I] := Settings.Colors[I+3];
     SetMapRailPalette(FDocument,FEditHistory,RailColors[0],RailColors[1],
       RailColors[2],RailColors[3]);
     EditorStateChanged(FEditorState);
@@ -984,13 +994,23 @@ end;
 
 procedure TMainForm.ToolMenuItemClick(Sender: TObject);
 begin
-  if Sender = FLayerMenuItem then
+  if Sender = FRoutePreviewMenuItem then
+    RunRoutePreview
+  else if Sender = FLayerMenuItem then
     FDockManager.SetToolVisible(FLayerFrame,
       not FDockManager.ToolVisible(FLayerFrame))
   else if Sender = FObjectPropertiesMenuItem then
     FDockManager.SetToolVisible(FObjectPropertiesFrame,
       not FDockManager.ToolVisible(FObjectPropertiesFrame));
   FViewMenu.Close;
+end;
+
+procedure TMainForm.RunRoutePreview;
+var ErrorText: string;
+begin
+  if FEditorFrame=nil then Exit;
+  if not FEditorFrame.CanvasControl.ToggleRoutePreview(ErrorText) then
+    lblStatus.Caption:='ルートプレビュー: '+ErrorText;
 end;
 
 procedure TMainForm.ToolVisibilityChanged(Sender: TToolPlaceholderFrame);
@@ -1053,6 +1073,9 @@ end;
 procedure TMainForm.InitializeShortcuts;
 begin
   FShortcuts := TShortcutAction.Create;
+  FShortcuts.Add(VK_SPACE, [],
+    procedure begin RunRoutePreview; end,
+    function: Boolean begin Result:=(FEditorFrame<>nil) and not IsTextInputFocused; end);
   FShortcuts.Add(VK_OEM_6, [ssCtrl],
     procedure begin ExecuteLayerAction(vlaMoveForward); end,
     function: Boolean begin Result := CanExecuteLayerAction(vlaMoveForward); end);

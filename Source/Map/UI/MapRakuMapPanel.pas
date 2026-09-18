@@ -58,7 +58,7 @@ destructor TMapPresetButton.Destroy;
 begin FPreview.Free; inherited; end;
 
 procedure TMapPresetButton.PaintSymbolPreview;
-var Layer:TMapRakuGroupLayer; Background:TColor;
+var Layer:TMapRakuGroupLayer; Background:TColor; SymbolKind:Integer;
 begin
   Background:=clWhite;
   if (FDocument<>nil) and (FDocument.CanvasLayer<>nil) then
@@ -66,7 +66,8 @@ begin
   if (FPreview<>nil) and (FPreviewBackground<>Background) then
     FreeAndNil(FPreview);
   if FPreview=nil then begin
-    Layer:=CreateMapSymbol(Tag-100,MapSymbolDefaultLabel(Tag-100));
+    if Tag>=343 then SymbolKind:=Tag-333 else SymbolKind:=Tag-100;
+    Layer:=CreateMapSymbol(SymbolKind,MapSymbolDefaultLabel(SymbolKind));
     try FPreview:=CreateMapPresetThumbnail(Layer,64,42,Background);
     finally Layer.Free; end;
     FPreviewBackground:=Background;
@@ -96,6 +97,7 @@ begin
   FCategory.Items.Add(U([$8A18,$53F7])); FCategory.Items.Add(U([$6B69,$9053]));
   FCategory.Items.Add(U([$5EFA,$7269])); FCategory.Items.Add(U([$56F3,$5F62]));
   FCategory.Items.Add(U([$6587,$5B57])); FCategory.Items.Add(U([$305D,$306E,$4ED6]));
+  FCategory.Items.Add(U([$30EB,$30FC,$30C8]));
   FCategory.ItemIndex:=0; FCategory.OnChange:=CategoryChange;
   FGallery:=TScrollBox.Create(Self); FGallery.Parent:=Self; FGallery.SetBounds(6,48,162,ClientHeight-54);
   FGallery.Anchors:=[akLeft,akTop,akRight,akBottom]; FGallery.BorderStyle:=bsNone;
@@ -163,6 +165,13 @@ begin
       AddPreset(316,U([$89D2,$4E38,$56DB,$89D2])); AddPreset(317,U([$5186])); end;
     7: begin AddPreset(320,U([$6587,$5B57])); AddPreset(321,U([$7D4C,$8DEF,$6587,$5B57])); end;
     8: begin AddPreset(330,U([$5F27,$5F62])); AddPreset(331,U([$5F27])); end;
+    9: begin
+      AddPreset(340,U([$30EB,$30FC,$30C8])+' '+U([$76F4,$7DDA]));
+      AddPreset(341,U([$30EB,$30FC,$30C8])+' '+U([$92ED,$89D2,$9023,$7D9A]));
+      AddPreset(342,U([$30EB,$30FC,$30C8])+' '+U([$30D9,$30B8,$30A7,$9023,$7D9A]));
+      AddPreset(343,U([$30EB,$30FC,$30C8])+' '+U([$958B,$59CB,$70B9]));
+      AddPreset(344,U([$30EB,$30FC,$30C8])+' '+U([$7D42,$4E86,$70B9]));
+    end;
   end;
 end;
 
@@ -228,7 +237,7 @@ begin FState.CurrentTool:=vetSelect; FState.OpenGroup:=nil; FState.PendingSymbol
   FState.MapElement:=Kind; FState.CreationColor:=Color; FState.NextVertexKind:=VertexKind;
   if FState.LineStrokeWidth<2 then FState.LineStrokeWidth:=12;
   FState.CurrentTool:=Tool;
-  if Kind='road' then
+  if (Kind='road') or (Kind='route') then
     FState.CreationColor:=FState.MapPlacementColor(FDocument,FromSelected)
   else if Kind='river' then
     FState.CreationColor:=FState.MapPlacementColor(FDocument,FromSelected);
@@ -254,9 +263,11 @@ begin
 end;
 
 procedure TMapToolsPanel.PresetClick(Sender:TObject);
-var P:Integer; Kind:string; Base:Integer;
+var P:Integer; Kind:string; Base:Integer; PreviousKind,PreviousRouteId:string;
 begin
   P:=TControl(Sender).Tag;
+  PreviousKind:=FState.MapElement;
+  PreviousRouteId:=FState.MapRouteId;
   FState.EndMapPlacement;
   if P in [200..202] then begin
     if P=200 then Kind:='stairs-up' else if P=201 then Kind:='stairs-down'
@@ -306,8 +317,20 @@ begin
   else if (P>=330) and (P<=331) then
     if P=330 then ActivateGeneric(vetShape)
     else ActivateGeneric(vetArcShape);
-  if (FState.MapElement='road') or (FState.MapElement='river') then
+  if (P=343) or (P=344) then
+    ActivateSymbol(P-333);
+  if (P>=340) and (P<=342) then begin
+    if P=340 then ActivateLine('route',vetLine,slvkSharp,clRed)
+    else if P=341 then ActivateLine('route',vetPath,slvkSharp,clRed)
+    else ActivateLine('route',vetPath,slvkBezier,clRed);
+  end;
+  if (FState.MapElement='road') or (FState.MapElement='river') or
+     (FState.MapElement='route') then
+  begin
     FState.BeginMapPlacement(FDocument);
+    if (PreviousKind='route') and (FState.MapElement='route') then
+      FState.ResumeMapRoute(PreviousRouteId);
+  end;
   FDocument.SetSelectedLayers([]);
   FState.ActiveMapPreset:=P;
   RefreshState;

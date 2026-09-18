@@ -2214,7 +2214,7 @@ object MainForm: TMainForm
       Left = 0
       Top = 0
       Width = 239
-      Height = 15
+      Height = 42
       Align = alLeft
       Caption = 'File     Edit                    Object     Layout     Help'
       Font.Charset = DEFAULT_CHARSET
@@ -2224,6 +2224,7 @@ object MainForm: TMainForm
       Font.Style = []
       ParentFont = False
       Layout = tlCenter
+      ExplicitHeight = 15
     end
     object pnlViewMenuButton: TPanel
       Left = 92
@@ -2258,8 +2259,8 @@ object MainForm: TMainForm
     object lblStatus: TLabel
       Left = 0
       Top = 0
-      Width = 144
-      Height = 15
+      Width = 1180
+      Height = 24
       Align = alClient
       Caption = 'Ready   Canvas: 1920 x 1080'
       Font.Charset = DEFAULT_CHARSET
@@ -2269,6 +2270,8 @@ object MainForm: TMainForm
       Font.Style = []
       ParentFont = False
       Layout = tlCenter
+      ExplicitWidth = 144
+      ExplicitHeight = 15
     end
   end
   object pnlWorkspace: TPanel
@@ -2281,63 +2284,64 @@ object MainForm: TMainForm
     Color = 1710618
     ParentBackground = False
     TabOrder = 3
-    ExplicitTop = 72
     ExplicitWidth = 1178
-    ExplicitHeight = 616
+    ExplicitHeight = 646
     object splLeftRegion: TSplitter
       Left = 286
       Top = 0
       Width = 5
-      Height = 624
+      Height = 654
       Color = 3815994
       ParentColor = False
+      ExplicitHeight = 624
     end
     object splRightRegion: TSplitter
       Left = 885
       Top = 0
       Width = 5
-      Height = 624
+      Height = 654
       Align = alRight
       Color = 3815994
       ParentColor = False
+      ExplicitHeight = 624
     end
     object pnlLeftDockArea: TPanel
       Left = 0
       Top = 0
       Width = 286
-      Height = 624
+      Height = 654
       Align = alLeft
       BevelOuter = bvNone
       Color = 2171169
       ParentBackground = False
       TabOrder = 0
-      ExplicitHeight = 616
+      ExplicitHeight = 646
     end
     object pnlRightDockArea: TPanel
       Left = 890
       Top = 0
       Width = 290
-      Height = 624
+      Height = 654
       Align = alRight
       BevelOuter = bvNone
       Color = 2171169
       ParentBackground = False
       TabOrder = 1
       ExplicitLeft = 888
-      ExplicitHeight = 616
+      ExplicitHeight = 646
     end
     object pnlEditorHost: TPanel
       Left = 291
       Top = 0
       Width = 594
-      Height = 624
+      Height = 654
       Align = alClient
       BevelOuter = bvNone
       Color = 1184274
       ParentBackground = False
       TabOrder = 2
       ExplicitWidth = 592
-      ExplicitHeight = 616
+      ExplicitHeight = 646
     end
     object pnlLeftDropTarget: TPanel
       Left = 0

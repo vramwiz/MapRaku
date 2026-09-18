@@ -97,7 +97,7 @@ begin
   ACanvas.Pen.Width:=1;
   case APreset of
     // 記号は実レイヤーから作った縮図をボタン側でキャッシュする。
-    100..199: ASymbolPreview;
+    100..199,343..344: ASymbolPreview;
     0..2: if ADocument<>nil then
       LinePreview(ADocument.CanvasLayer.RoadPresetColor,False,APreset=2)
       else LinePreview($00E4E4E4,False,APreset=2);
@@ -106,6 +106,7 @@ begin
     20..22: if ADocument<>nil then
       LinePreview(ADocument.CanvasLayer.RiverPresetColor,False,APreset=22)
       else LinePreview($00E8A050,False,APreset=22);
+    340..342: LinePreview(clRed,False,APreset=342);
     23: begin ACanvas.Brush.Style:=bsSolid; ACanvas.Brush.Color:=$00E8A050;
       ACanvas.Pen.Color:=$00C08030; ACanvas.Ellipse(15,10,57,42); end;
     24: begin ACanvas.Brush.Style:=bsSolid; ACanvas.Brush.Color:=$00E8A050;

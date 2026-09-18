@@ -29,15 +29,47 @@ type
 
 implementation
 
-uses System.Math;
+uses System.Math, System.Generics.Collections, System.Generics.Defaults;
 
 constructor TMapRakuDeleteLayersCommand.Create(
   ADocument: TVectArtDocument; const Indices,
   BeforeSelection: TArray<Integer>);
+var I,J: Integer; Candidates: TList<Integer>; RouteId: string; HasRemaining: Boolean;
 begin
   inherited Create;
   FDocument := ADocument;
-  FIndices := Copy(Indices);
+  Candidates:=TList<Integer>.Create;
+  try
+    Candidates.AddRange(Indices);
+    for I:=0 to High(Indices) do
+      if (Indices[I]>=0) and (Indices[I]<ADocument.LayerCount) and
+         (ADocument[Indices[I]] is TVectArtPathLayer) and
+         (TVectArtPathLayer(ADocument[Indices[I]]).MapElement='route') then begin
+        RouteId:=TVectArtPathLayer(ADocument[Indices[I]]).RouteId;
+        if RouteId='' then RouteId:=ADocument[Indices[I]].PersistentId;
+        // 複数区間の一部を削除しても、残る区間の開始・終了点は保持してエラーとして示す。
+        HasRemaining:=False;
+        for J:=0 to ADocument.LayerCount-1 do
+          if (ADocument[J] is TVectArtPathLayer) and
+             (TVectArtPathLayer(ADocument[J]).MapElement='route') and
+             (J<>Indices[I]) and not Candidates.Contains(J) then begin
+            if TVectArtPathLayer(ADocument[J]).RouteId<>'' then
+              HasRemaining:=TVectArtPathLayer(ADocument[J]).RouteId=RouteId
+            else
+              HasRemaining:=ADocument[J].PersistentId=RouteId;
+            if HasRemaining then Break;
+          end;
+        if not HasRemaining then
+          for J:=0 to ADocument.LayerCount-1 do
+            if (ADocument[J] is TMapRakuGroupLayer) and
+               (TMapRakuGroupLayer(ADocument[J]).RoutePathId=RouteId) then
+              Candidates.Add(J);
+      end;
+    Candidates.Sort(TComparer<Integer>.Default);
+    for I:=Candidates.Count-1 downto 1 do
+      if Candidates[I]=Candidates[I-1] then Candidates.Delete(I);
+    FIndices:=Candidates.ToArray;
+  finally Candidates.Free; end;
   FBeforeSelection := Copy(BeforeSelection);
   SetLength(FDeletedLayers, Length(FIndices));
   FLayersInDocument := True;

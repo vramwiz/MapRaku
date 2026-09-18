@@ -10,10 +10,11 @@ uses
 type
   TMapRakuCanvasColorSettings = record
     DarkMap: Boolean;
-    Colors: array[0..5] of TColor; // 道路、川、JR本体、JR模様、私鉄線、私鉄枕木。
-    ColorChanged: array[0..5] of Boolean;
+    Colors: array[0..6] of TColor; // 道路、川、ルート、JR本体、JR模様、私鉄線、私鉄枕木。
+    ColorChanged: array[0..6] of Boolean;
     ApplyRoadExisting: Boolean;
     ApplyRiverExisting: Boolean;
+    ApplyRouteExisting: Boolean;
   end;
 
 // キャンセル時は文書に反映せず、確定時だけ選択値を返す。
@@ -47,10 +48,10 @@ type
     FThemeGroup: TComboBox;
     FCanvasTab, FColorTab: TDarkDialogButton;
     FCanvasPage, FColorPage: TPanel;
-    FColorPanels: array[0..5] of TPanel;
-    FColorValues: array[0..5] of TColor;
-    FColorChanged: array[0..5] of Boolean;
-    FApplyRoad, FApplyRiver: TDarkDialogCheckBox;
+    FColorPanels: array[0..6] of TPanel;
+    FColorValues: array[0..6] of TColor;
+    FColorChanged: array[0..6] of Boolean;
+    FApplyRoad, FApplyRiver, FApplyRoute: TDarkDialogCheckBox;
     FOldThemeIndex: Integer;
     FResolutions: TArray<TCanvasResolution>;
     procedure AddResolution(AWidth, AHeight: Integer);
@@ -144,7 +145,7 @@ begin
   Font.Name := 'Segoe UI';
   Font.Height := -14;
   ClientWidth := 400;
-  ClientHeight := 470;
+  ClientHeight := 520;
   OnShow := ApplyDarkMode;
   Position := poOwnerFormCenter;
 
@@ -162,13 +163,13 @@ begin
   FColorTab.OnClick := PageClick;
   FCanvasPage := TPanel.Create(Self);
   FCanvasPage.Parent := Self;
-  FCanvasPage.SetBounds(12,45,376,383);
+  FCanvasPage.SetBounds(12,45,376,433);
   FCanvasPage.BevelOuter := bvNone;
   FCanvasPage.Color := COLOR_BACKGROUND;
   FCanvasPage.ParentBackground := False;
   FColorPage := TPanel.Create(Self);
   FColorPage.Parent := Self;
-  FColorPage.SetBounds(12,45,376,383);
+  FColorPage.SetBounds(12,45,376,433);
   FColorPage.BevelOuter := bvNone;
   FColorPage.Color := COLOR_BACKGROUND;
   FColorPage.ParentBackground := False;
@@ -249,18 +250,19 @@ end;
 procedure TCanvasSettingsForm.CreateColorRows(Canvas: TVectArtCanvasLayer);
 var
   I: Integer;
-  ColorNames: array[0..5] of string;
+  ColorNames: array[0..6] of string;
 begin
   FColorValues[0] := Canvas.RoadPresetColor;
   FColorValues[1] := Canvas.RiverPresetColor;
-  FColorValues[2] := Canvas.JrPrimaryColor;
-  FColorValues[3] := Canvas.JrSecondaryColor;
-  FColorValues[4] := Canvas.RailPrimaryColor;
-  FColorValues[5] := Canvas.RailSecondaryColor;
+  FColorValues[2] := Canvas.RoutePresetColor;
+  FColorValues[3] := Canvas.JrPrimaryColor;
+  FColorValues[4] := Canvas.JrSecondaryColor;
+  FColorValues[5] := Canvas.RailPrimaryColor;
+  FColorValues[6] := Canvas.RailSecondaryColor;
   ColorNames[0] := '道路'; ColorNames[1] := '川';
-  ColorNames[2] := 'JR 本体'; ColorNames[3] := 'JR 模様';
-  ColorNames[4] := '私鉄 線'; ColorNames[5] := '私鉄 枕木';
-  for I := 0 to 5 do
+  ColorNames[2] := 'ルート'; ColorNames[3] := 'JR 本体'; ColorNames[4] := 'JR 模様';
+  ColorNames[5] := '私鉄 線'; ColorNames[6] := '私鉄 枕木';
+  for I := 0 to 6 do
   begin
     with TLabel.Create(Self) do
     begin
@@ -292,12 +294,16 @@ begin
   end;
   FApplyRoad := TDarkDialogCheckBox.Create(Self);
   FApplyRoad.Parent := FColorPage;
-  FApplyRoad.SetBounds(12,338,340,22);
+  FApplyRoad.SetBounds(12,350,340,22);
   FApplyRoad.Caption := '道路：個別色を含む既存経路へ一括適用';
   FApplyRiver := TDarkDialogCheckBox.Create(Self);
   FApplyRiver.Parent := FColorPage;
-  FApplyRiver.SetBounds(12,360,340,22);
+  FApplyRiver.SetBounds(12,372,340,22);
   FApplyRiver.Caption := '川：個別色を含む既存経路へ一括適用';
+  FApplyRoute := TDarkDialogCheckBox.Create(Self);
+  FApplyRoute.Parent := FColorPage;
+  FApplyRoute.SetBounds(12,394,340,22);
+  FApplyRoute.Caption := 'ルート：個別色を含む既存経路へ一括適用';
 
 end;
 
@@ -305,14 +311,14 @@ procedure TCanvasSettingsForm.CreateDialogButtons;
 begin
   FOkButton := TDarkDialogButton.Create(Self);
   FOkButton.Parent := Self;
-  FOkButton.SetBounds(222, 432, 75, 28);
+  FOkButton.SetBounds(222, 482, 75, 28);
   FOkButton.Caption := 'OK';
   FOkButton.Primary := True;
   FOkButton.ModalResult := mrOk;
 
   FCancelButton := TDarkDialogButton.Create(Self);
   FCancelButton.Parent := Self;
-  FCancelButton.SetBounds(303, 432, 85, 28);
+  FCancelButton.SetBounds(303, 482, 85, 28);
   FCancelButton.Caption := 'Cancel';
   FCancelButton.ModalResult := mrCancel;
 end;
@@ -377,7 +383,7 @@ var I: Integer; OldDefault, NewDefault: TColor;
 begin
   if FOldThemeIndex = FThemeGroup.ItemIndex then Exit;
   // テーマ切替で手動設定色を上書きしないよう、旧標準色だけを更新する。
-  for I := 0 to 5 do
+  for I := 0 to 6 do
   begin
     if FOldThemeIndex = 1 then OldDefault := DarkColors[I]
     else OldDefault := LightColors[I];
@@ -426,6 +432,7 @@ begin
   end;
   Result.ApplyRoadExisting := FApplyRoad.Checked;
   Result.ApplyRiverExisting := FApplyRiver.Checked;
+  Result.ApplyRouteExisting := FApplyRoute.Checked;
 end;
 
 function ExecuteCanvasSettingsDialog(AOwner: TComponent;

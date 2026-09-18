@@ -3,7 +3,7 @@
         <ProjectGuid>{5C520506-60EA-43D9-B5DD-5A44E6665F25}</ProjectGuid>
         <ProjectVersion>20.4</ProjectVersion>
         <FrameworkType>None</FrameworkType>
-        <Config Condition="'$(Config)'==''">Release</Config>
+        <Config Condition="'$(Config)'==''">Debug</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
         <ProjectName Condition="'$(ProjectName)'==''">SYNC_MapRaku_Filter</ProjectName>
         <TargetedPlatforms>2</TargetedPlatforms>
@@ -16,6 +16,7 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Debug' or '$(Cfg_1)'!=''">
         <Cfg_1>true</Cfg_1>
+        <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
         <CfgParent>Base</CfgParent>
         <Base>true</Base>
     </PropertyGroup>
@@ -290,19 +291,19 @@
     <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
     <Import Project="$(MSBuildProjectName).deployproj" Condition="Exists('$(MSBuildProjectName).deployproj')"/>
     <PropertyGroup Condition="'$(Config)'=='Debug' And '$(Platform)'=='Win64'">
-        <PreBuildEvent><![CDATA[if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
+        <PreBuildEvent>if not exist &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot; mkdir &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot;</PreBuildEvent>
         <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
         <PreLinkEvent/>
         <PreLinkEventIgnoreExitCode>False</PreLinkEventIgnoreExitCode>
-        <PostBuildEvent><![CDATA[copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll"&&copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll"]]></PostBuildEvent>
+        <PostBuildEvent>copy /Y &quot;$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll&quot; &quot;$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2&quot;&amp;&amp;copy /Y &quot;$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll&quot; &quot;$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll&quot;&amp;&amp;copy /Y &quot;$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll&quot; &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2&quot;&amp;&amp;copy /Y &quot;$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll&quot; &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll&quot;</PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Release' And '$(Platform)'=='Win64'">
-        <PreBuildEvent><![CDATA[if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
+        <PreBuildEvent>if not exist &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot; mkdir &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot;</PreBuildEvent>
         <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
         <PreLinkEvent/>
         <PreLinkEventIgnoreExitCode>False</PreLinkEventIgnoreExitCode>
-        <PostBuildEvent><![CDATA[copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll"&&copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll"]]></PostBuildEvent>
+        <PostBuildEvent>copy /Y &quot;$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll&quot; &quot;$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2&quot;&amp;&amp;copy /Y &quot;$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll&quot; &quot;$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll&quot;&amp;&amp;copy /Y &quot;$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll&quot; &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2&quot;&amp;&amp;copy /Y &quot;$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll&quot; &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll&quot;</PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
     </PropertyGroup>
 </Project>

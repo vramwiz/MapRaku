@@ -278,6 +278,8 @@ begin
       TJSONNumber.Create(Integer(Canvas.RoadPresetColor)));
     CanvasJson.AddPair('riverPresetColor',
       TJSONNumber.Create(Integer(Canvas.RiverPresetColor)));
+    CanvasJson.AddPair('routePresetColor',
+      TJSONNumber.Create(Integer(Canvas.RoutePresetColor)));
     CanvasJson.AddPair('jrPrimaryColor',
       TJSONNumber.Create(Integer(Canvas.JrPrimaryColor)));
     CanvasJson.AddPair('jrSecondaryColor',
@@ -313,6 +315,14 @@ begin
         GroupJson.AddPair('type', 'group');
         GroupJson.AddPair('name', Group.Name);
         GroupJson.AddPair('mapSymbol', TJSONBool.Create(Group.MapSymbol));
+        if Group.RouteMarkerKind<>'' then
+          GroupJson.AddPair('routeMarkerKind', Group.RouteMarkerKind);
+        if Group.RoutePathId<>'' then
+          GroupJson.AddPair('routePathId', Group.RoutePathId);
+        if Group.HasRouteMarkerPosition then begin
+          GroupJson.AddPair('routeMarkerX',TJSONNumber.Create(Group.RouteMarkerPosition.X));
+          GroupJson.AddPair('routeMarkerY',TJSONNumber.Create(Group.RouteMarkerPosition.Y));
+        end;
         GroupJson.AddPair('mapSurface', TJSONBool.Create(Group.MapSurface));
         GroupJson.AddPair('opacity', TJSONNumber.Create(Group.Opacity));
         GroupJson.AddPair('visible', TJSONBool.Create(Group.Visible));
@@ -482,6 +492,8 @@ begin
         PathJson.AddPair('type', 'path');
         PathJson.AddPair('name', Path.Name);
         PathJson.AddPair('mapElement', Path.MapElement);
+        if Path.RouteId<>'' then
+          PathJson.AddPair('routeId', Path.RouteId);
         PathJson.AddPair('mapColorOverride',
           TJSONBool.Create(Path.MapColorOverride));
         PathJson.AddPair('mapStepCount',TJSONNumber.Create(Path.MapStepCount));

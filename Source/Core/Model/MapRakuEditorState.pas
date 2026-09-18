@@ -22,6 +22,7 @@ type
     FMapPlacementActive: Boolean;
     FMapPlacementColor: TColor;
     FMapPlacementKind: string;
+    FMapRouteId: string;
     FMapPlacementOverride: Boolean;
     FCreationPaintStyle: TMapRakuPaintStyle;
     FCurrentTool: TVectArtEditorTool;
@@ -63,6 +64,8 @@ type
       out FromSelectedObject: Boolean): TColor;
     procedure BeginMapPlacement(Document: TVectArtDocument);
     procedure EndMapPlacement;
+    // 直線・鋭角・ベジェの切替後も、同じ論理ルートへ区間を追加する。
+    procedure ResumeMapRoute(const RouteId: string);
     procedure SetMapPlacementColor(const Value: TColor);
     function GetOpenGroupChildren: TArray<TVectArtLayer>;
     function IsGroupInOpenPath(Group: TMapRakuGroupLayer): Boolean;
@@ -95,6 +98,8 @@ type
     property ActiveMapPreset: Integer read FActiveMapPreset
       write SetActiveMapPreset;
     property MapElement: string read FMapElement write FMapElement;
+    // 連続配置中のルート区間を同じ論理ルートへ束ねる一時ID。
+    property MapRouteId: string read FMapRouteId;
     property CurrentTool: TVectArtEditorTool read FCurrentTool
       write SetCurrentTool;
     // 新規配置へ値として複製する、各描画モード共通の作成スタイル。
@@ -134,7 +139,7 @@ type
 implementation
 
 uses
-  System.Math;
+  System.Math, System.SysUtils;
 
 const
   DEFAULT_RECTANGLE_COLOR = TColor($00E2904A);
@@ -238,6 +243,8 @@ begin
     Result := Document.CanvasLayer.RoadPresetColor
   else if FMapElement = 'river' then
     Result := Document.CanvasLayer.RiverPresetColor
+  else if FMapElement = 'route' then
+    Result := Document.CanvasLayer.RoutePresetColor
   else Exit;
   if FMapPlacementActive and (FMapPlacementKind = FMapElement) then
   begin
@@ -261,18 +268,32 @@ begin
 end;
 
 procedure TVectArtEditorState.BeginMapPlacement(Document: TVectArtDocument);
+var Id: TGUID;
 begin
   // 連続配置では最初に引き継いだ色を、選択解除後の次の1本にも使う。
   if FMapPlacementActive and (FMapPlacementKind = FMapElement) then Exit;
   FMapPlacementActive := False;
   FMapPlacementKind := FMapElement;
   FMapPlacementColor := MapPlacementColor(Document,FMapPlacementOverride);
+  if FMapElement='route' then begin
+    CreateGUID(Id);
+    FMapRouteId:=GUIDToString(Id);
+  end
+  else
+    FMapRouteId:='';
   FMapPlacementActive := True;
 end;
 
 procedure TVectArtEditorState.EndMapPlacement;
 begin
   FMapPlacementActive := False;
+  FMapRouteId := '';
+end;
+
+procedure TVectArtEditorState.ResumeMapRoute(const RouteId: string);
+begin
+  if (FMapElement='route') and (RouteId<>'') then
+    FMapRouteId:=RouteId;
 end;
 
 procedure TVectArtEditorState.SetMapPlacementColor(const Value: TColor);

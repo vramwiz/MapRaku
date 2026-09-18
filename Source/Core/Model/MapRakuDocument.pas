@@ -131,6 +131,10 @@ type
   TMapRakuGroupLayer = class(TVectArtLayer)
   private
     FMapSymbol: Boolean;
+    FRouteMarkerKind: string;
+    FRoutePathId: string;
+    FRouteMarkerPosition: TPointF;
+    FHasRouteMarkerPosition: Boolean;
     FMapSurface: Boolean;
     FChildren: TObjectList<TVectArtLayer>;
     function GetChild(Index: Integer): TVectArtLayer;
@@ -142,6 +146,12 @@ type
     function ExtractChild(Index: Integer): TVectArtLayer;
     procedure InsertChild(Index: Integer; Layer: TVectArtLayer);
     property MapSymbol: Boolean read FMapSymbol write FMapSymbol;
+    // ルートの開始点／終了点を記号の見た目から独立して識別する。
+    property RouteMarkerKind: string read FRouteMarkerKind write FRouteMarkerKind;
+    property RoutePathId: string read FRoutePathId write FRoutePathId;
+    // 絵柄の外接矩形に依存せず、開始・終了の論理位置を保存する。
+    property RouteMarkerPosition: TPointF read FRouteMarkerPosition write FRouteMarkerPosition;
+    property HasRouteMarkerPosition: Boolean read FHasRouteMarkerPosition write FHasRouteMarkerPosition;
     property MapSurface: Boolean read FMapSurface write FMapSurface;
     property ChildCount: Integer read GetChildCount;
     property Children[Index: Integer]: TVectArtLayer read GetChild; default;
@@ -158,6 +168,7 @@ type
     FBackgroundColor: TColor;
     FRoadPresetColor: TColor;
     FRiverPresetColor: TColor;
+    FRoutePresetColor: TColor;
     FJrPrimaryColor: TColor;
     FJrSecondaryColor: TColor;
     FRailPrimaryColor: TColor;
@@ -173,6 +184,8 @@ type
       write FRoadPresetColor;
     property RiverPresetColor: TColor read FRiverPresetColor
       write FRiverPresetColor;
+    property RoutePresetColor: TColor read FRoutePresetColor
+      write FRoutePresetColor;
     property JrPrimaryColor: TColor read FJrPrimaryColor write FJrPrimaryColor;
     property JrSecondaryColor: TColor read FJrSecondaryColor write FJrSecondaryColor;
     property RailPrimaryColor: TColor read FRailPrimaryColor write FRailPrimaryColor;
@@ -515,6 +528,7 @@ type
   TVectArtPathLayer = class(TVectArtLayer)
   private
     FMapElement: string;
+    FRouteId: string;
     FMapColorOverride: Boolean;
     FMapStepCount: Integer;
     FClosed: Boolean;
@@ -552,6 +566,8 @@ type
       TargetIndex: Integer; AdjustTarget: Boolean = True;
       AlignTangents: Boolean = True): Boolean;
     property MapElement: string read FMapElement write FMapElement; // 空文字は通常の線。road / jr / rail / river。
+    // routeの論理的な所属。空文字は旧ファイル互換のため自身だけのルートとして扱う。
+    property RouteId: string read FRouteId write FRouteId;
     property MapColorOverride: Boolean read FMapColorOverride
       write FMapColorOverride;
     property MapStepCount: Integer read FMapStepCount write FMapStepCount;
@@ -569,6 +585,7 @@ type
 
   TVectArtPathData = record
     MapElement: string; // 地図経路の種類。空文字は汎用Path。
+    RouteId: string; // route区間を束ねる論理ルートID。空文字は旧ファイル互換。
     MapColorOverride: Boolean; // 道路・川の色を個別に変更した場合だけTrue。
     MapStepCount: Integer; // 階段の段数。0は長さから自動決定。
     Transform: TArray<Double>; // 復元時にも保持する表示変形。未設定は恒等変換。
@@ -1147,6 +1164,7 @@ begin
   FBackgroundColor := AColor;
   FRoadPresetColor := $00E4E4E4;
   FRiverPresetColor := $00E8A050;
+  FRoutePresetColor := clRed;
   FJrPrimaryColor := $00222222;
   FJrSecondaryColor := clWhite;
   FRailPrimaryColor := $00222222;
@@ -2058,6 +2076,7 @@ begin
   PathLayer.StrokeColor := Data.StrokeColor;
   PathLayer.MifStrokeStyle := Data.MifStrokeStyle;
   PathLayer.MapElement := Data.MapElement;
+  PathLayer.RouteId := Data.RouteId;
   PathLayer.MapColorOverride := Data.MapColorOverride;
   PathLayer.MapStepCount := Max(Data.MapStepCount,0);
   PathLayer.StrokeWidth := Max(Data.StrokeWidth, 0.0);
@@ -2512,6 +2531,7 @@ begin
   Data.StrokeColor := PathLayer.StrokeColor;
   Data.MifStrokeStyle := PathLayer.MifStrokeStyle;
   Data.MapElement := PathLayer.MapElement;
+  Data.RouteId := PathLayer.RouteId;
   Data.MapColorOverride := PathLayer.MapColorOverride;
   Data.MapStepCount := PathLayer.MapStepCount;
   Data.StrokeWidth := PathLayer.StrokeWidth;
@@ -3261,7 +3281,9 @@ begin
     if PathLayer.MapElement = 'road' then
       PathLayer.MapColorOverride := Color <> CanvasLayer.RoadPresetColor
     else if PathLayer.MapElement = 'river' then
-      PathLayer.MapColorOverride := Color <> CanvasLayer.RiverPresetColor;
+      PathLayer.MapColorOverride := Color <> CanvasLayer.RiverPresetColor
+    else if PathLayer.MapElement = 'route' then
+      PathLayer.MapColorOverride := Color <> CanvasLayer.RoutePresetColor;
   end;
   PathLayer.StrokeColor := Color;
   PathLayer.StrokeWidth := NewWidth;

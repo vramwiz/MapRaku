@@ -623,6 +623,16 @@ begin
             GroupValue.Visible := ReadBoolean(GroupJson, 'visible');
             GroupValue.Locked := ReadBoolean(GroupJson, 'locked');
             GroupValue.MapSymbol := ReadOptionalBoolean(GroupJson, 'mapSymbol', False);
+            GroupValue.RouteMarkerKind := ReadOptionalString(GroupJson,
+              'routeMarkerKind', '');
+            GroupValue.RoutePathId := ReadOptionalString(GroupJson,
+              'routePathId', '');
+            GroupValue.HasRouteMarkerPosition :=
+              (GroupJson.GetValue('routeMarkerX') is TJSONNumber) and
+              (GroupJson.GetValue('routeMarkerY') is TJSONNumber);
+            if GroupValue.HasRouteMarkerPosition then
+              GroupValue.RouteMarkerPosition:=PointF(ReadSingle(GroupJson,
+                'routeMarkerX'),ReadSingle(GroupJson,'routeMarkerY'));
             GroupValue.MapSurface := ReadBoolean(GroupJson, 'mapSurface');
             GroupLayersJson := TJSONArray(RequireValue(GroupJson, 'layers',
               TJSONArray));
@@ -862,6 +872,7 @@ begin
           PathValue.Opacity := ReadSingle(LayerJson, 'opacity');
           PathValue.StrokeColor := clBlack;
           PathValue.MapElement := ReadOptionalString(LayerJson, 'mapElement', '');
+          PathValue.RouteId := ReadOptionalString(LayerJson, 'routeId', '');
           PathValue.MapColorOverride := ReadOptionalBoolean(LayerJson,
             'mapColorOverride', False);
           PathValue.MapStepCount := 0;
@@ -869,8 +880,10 @@ begin
             PathValue.MapStepCount := Max(0,
               TJSONNumber(LayerJson.GetValue('mapStepCount')).AsInt);
           if not MatchStr(PathValue.MapElement, ['', 'road', 'jr', 'rail',
-            'river', 'stairs-up', 'stairs-down', 'pedestrian-bridge']) then
+            'river', 'route', 'stairs-up', 'stairs-down', 'pedestrian-bridge']) then
             raise EConvertError.Create('不明な地図経路種別');
+          if (PathValue.MapElement<>'route') and (PathValue.RouteId<>'') then
+            raise EConvertError.Create('ルート以外にはrouteIdを指定できません');
           PathValue.StrokeWidth := 1.0;
           PathValue.MifStrokeStyle := vssSolid;
           PathValue.LineCap := vlcSquare;
@@ -895,6 +908,14 @@ begin
                   TColor(ReadInteger(CanvasJson,'riverPresetColor'))
               else
                 PathValue.MapColorOverride := PathValue.StrokeColor <> $00E8A050;
+            end
+            else if PathValue.MapElement = 'route' then
+            begin
+              if CanvasJson.GetValue('routePresetColor') is TJSONNumber then
+                PathValue.MapColorOverride := PathValue.StrokeColor <>
+                  TColor(ReadInteger(CanvasJson,'routePresetColor'))
+              else
+                PathValue.MapColorOverride := PathValue.StrokeColor <> clRed;
             end;
           end;
           PathValue.StrokeWidth := Max(ReadSingle(LayerJson,
@@ -1334,6 +1355,9 @@ begin
       if CanvasJson.GetValue('riverPresetColor') is TJSONNumber then
         Canvas.RiverPresetColor := TColor(ReadInteger(CanvasJson,
           'riverPresetColor'));
+      if CanvasJson.GetValue('routePresetColor') is TJSONNumber then
+        Canvas.RoutePresetColor := TColor(ReadInteger(CanvasJson,
+          'routePresetColor'));
       if (Canvas.BackgroundColor = clBlack) and
         (CanvasJson.GetValue('jrPrimaryColor') = nil) then
       begin

@@ -3,7 +3,7 @@
         <ProjectGuid>{9BA72DE5-5BDD-43AC-8369-2062B31DF015}</ProjectGuid>
         <ProjectVersion>20.4</ProjectVersion>
         <FrameworkType>VCL</FrameworkType>
-        <Config Condition="'$(Config)'==''">Release</Config>
+        <Config Condition="'$(Config)'==''">Debug</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
         <ProjectName Condition="'$(ProjectName)'==''">MapRaku</ProjectName>
         <TargetedPlatforms>2</TargetedPlatforms>
@@ -99,7 +99,6 @@
         <DCCReference Include="Source\Map\Commands\MapRakuMapCommands.pas"/>
         <DCCReference Include="Source\Map\Crossings\MapRakuCrossings.pas"/>
         <DCCReference Include="Source\Map\UI\MapRakuMapPanel.pas"/>
-        <DCCReference Include="Source\Map\UI\MapRakuPresetButtonPainter.pas"/>
         <DCCReference Include="Source\Map\Rendering\Paths\MapRakuPathRenderer.pas"/>
         <DCCReference Include="Source\Map\Rendering\Paths\MapRakuRailRenderer.pas"/>
         <DCCReference Include="Source\Map\Rendering\Paths\MapRakuRiverRenderer.pas"/>
@@ -135,7 +134,6 @@
         <DCCReference Include="Source\Editor\Creation\MapRakuPlacementPreview.pas"/>
         <DCCReference Include="Source\ObjectProperties\Color\MapRakuColorHistory.pas"/>
         <DCCReference Include="Source\ObjectProperties\Color\MapRakuColorCode.pas"/>
-        <DCCReference Include="Source\Shell\MapRakuFileDialogs.pas"/>
         <DCCReference Include="Source\Shell\MapRakuMainForm.pas">
             <Form>MainForm</Form>
         </DCCReference>

@@ -20,6 +20,7 @@ uses
   MapRakuPaintStyles,
   MapRakuSelectionGeometry,
   MapRakuShapeCreation, MapRakuPlacementPreview, MapRakuCanvasRenderCache,
+  MapRakuRouteProgress,
   MapRakuTextEditing, MapRakuTextEditOverlay,
   WindowsImeController;
 
@@ -87,6 +88,11 @@ type
     FZoom: Single;
     FZoomPreviewActive: Boolean;
     FZoomRenderTimer: TTimer;
+    FRoutePreviewActive: Boolean;
+    FRoutePreviewData: TMapRakuRouteProgressData;
+    FRoutePreviewProgress: Single;
+    FRoutePreviewStartedAt: UInt64;
+    FRoutePreviewTimer: TTimer;
     procedure CalculateCanvasBounds;
     procedure ConfigureInteraction;
     function EditingTextPath: Boolean;
@@ -136,6 +142,10 @@ type
     procedure UpdateTextEditorBounds;
     procedure UpdateTextLayerFromBuffer;
     procedure ZoomRenderTimerTick(Sender: TObject);
+    procedure RoutePreviewTimerTick(Sender: TObject);
+    function CurrentRoutePreviewId: string;
+    procedure DrawRoutePreview(ACanvas: TCanvas); overload;
+    procedure DrawRoutePreview(ACanvas: TDirect2DCanvas); overload;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     function StrokeWidthCursorVisible: Boolean;
     function StrokeWidthCursorDiameter: Single;
@@ -178,6 +188,8 @@ type
     procedure CancelTransformDrag;
     // 配置先の分類を変える場合も右クリックと同じ規則で配置を終了する。
     procedure EndPlacement;
+    // 選択中（未選択なら先頭）の論理ルートをSpace用に再生／停止する。
+    function ToggleRoutePreview(out ErrorText: string): Boolean;
     // 文字入力中はホスト側のオブジェクト編集ショートカットを抑止する。
     property TextEditing: Boolean read FTextEditing;
     property CanvasBounds: TRect read FCanvasBounds;
@@ -205,7 +217,7 @@ const
 implementation
 
 uses
-  MapRakuSymbols, System.Math, System.Skia, System.UITypes, Winapi.D2D1, Vcl.Clipbrd,
+  MapRakuSymbols, System.Math, System.Skia, System.UITypes, System.IOUtils, Winapi.D2D1, Vcl.Clipbrd,
   MapRakuCanvasGuides, MapRakuCanvasPreview,
   MapRakuContextMenuInteraction,
   MapRakuEllipseGeometry, MapRakuGeometry,
@@ -244,6 +256,18 @@ const
   // Falseにすると編集ビューの細線補正を一括で無効化する。
   ENABLE_THIN_STROKE_PREVIEW = True;
   MIN_PREVIEW_STROKE_WIDTH_PIXELS = 1.0;
+
+procedure RoutePreviewDebug(const Text: string);
+var FileName: string;
+begin
+  FileName:=TPath.Combine(TPath.GetTempPath,'MapRakuRoutePreview.log');
+  try
+    TFile.AppendAllText(FileName,FormatDateTime('yyyy-mm-dd hh:nn:ss.zzz ',Now)+Text+sLineBreak,TEncoding.UTF8);
+  except
+    // デバッグ出力の失敗で編集・プレビューを停止しない。
+  end;
+  OutputDebugString(PChar('MapRaku route preview: '+Text));
+end;
 
 procedure DrawPremultipliedBitmap(Target: TCanvas; const Bounds: TRect;
   Bitmap: Vcl.Graphics.TBitmap);
@@ -300,6 +324,10 @@ begin
   FZoomRenderTimer.Enabled := False;
   FZoomRenderTimer.Interval := 140;
   FZoomRenderTimer.OnTimer := ZoomRenderTimerTick;
+  FRoutePreviewTimer := TTimer.Create(Self);
+  FRoutePreviewTimer.Enabled := False;
+  FRoutePreviewTimer.Interval := 16;
+  FRoutePreviewTimer.OnTimer := RoutePreviewTimerTick;
   FShapeCreation := TVectArtShapeCreation.Create;
   FShapeCreation.DeferTextPathHistory := True;
   FTextEditor := TMapRakuImeEdit.Create(Self);
@@ -325,6 +353,7 @@ end;
 destructor TVectArtCanvasControl.Destroy;
 begin
   FTextEditor.Free;
+  FRoutePreviewTimer.Free;
   FZoomRenderTimer.Free;
   FPlacementPreview.Free;
   FRenderCache.Free;
@@ -1562,6 +1591,101 @@ begin
   Invalidate;
 end;
 
+function TVectArtCanvasControl.CurrentRoutePreviewId: string;
+var I: Integer; Path: TVectArtPathLayer;
+begin
+  Result := '';
+  if FDocument=nil then begin
+    RoutePreviewDebug('route selection: document=nil');
+    Exit;
+  end;
+  for I:=0 to FDocument.LayerCount-1 do
+    if FDocument.IsLayerSelected(I) and (FDocument[I] is TVectArtPathLayer) then begin
+      Path:=TVectArtPathLayer(FDocument[I]);
+      if Path.MapElement='route' then begin
+        Result:=MapRakuRouteIdentifier(Path);
+        RoutePreviewDebug('route selection: selected '+Path.PersistentId+' / '+Result);
+        Exit;
+      end;
+    end;
+  for I:=0 to FDocument.LayerCount-1 do
+    if FDocument[I] is TVectArtPathLayer then begin
+      Path:=TVectArtPathLayer(FDocument[I]);
+      if Path.MapElement='route' then begin
+        Result:=MapRakuRouteIdentifier(Path);
+        RoutePreviewDebug('route selection: first '+Path.PersistentId+' / '+Result);
+        Exit;
+      end;
+  end;
+  RoutePreviewDebug('route selection: no route layer');
+end;
+
+function TVectArtCanvasControl.ToggleRoutePreview(out ErrorText: string): Boolean;
+var RouteId: string;
+begin
+  ErrorText:='';
+  if FRoutePreviewActive then begin
+    FRoutePreviewActive:=False; FRoutePreviewTimer.Enabled:=False;
+    RoutePreviewDebug('preview stopped');
+    Invalidate; Exit(True);
+  end;
+  RouteId:=CurrentRoutePreviewId;
+  RoutePreviewDebug('preview build: route='+RouteId);
+  if not TryBuildMapRakuRoute(FDocument,RouteId,FRoutePreviewData,ErrorText) then begin
+    RoutePreviewDebug('preview build failed: '+ErrorText);
+    Exit(False);
+  end;
+  FRoutePreviewProgress:=0;
+  FRoutePreviewStartedAt:=GetTickCount64;
+  FRoutePreviewActive:=True;
+  FRoutePreviewTimer.Enabled:=True;
+  RoutePreviewDebug(Format('preview started: route=%s samples=%d length=%.3f',
+    [RouteId,Length(FRoutePreviewData.Samples),FRoutePreviewData.TotalLength]));
+  Invalidate;
+  Result:=True;
+end;
+
+procedure TVectArtCanvasControl.RoutePreviewTimerTick(Sender: TObject);
+begin
+  // 編集時の確認用に10秒で全行程を再生する。動画側の進行位置とは独立した時間軸である。
+  FRoutePreviewProgress:=Min(100,(GetTickCount64-FRoutePreviewStartedAt)*0.01);
+  if FRoutePreviewProgress>=100 then begin
+    FRoutePreviewProgress:=100;
+    FRoutePreviewTimer.Enabled:=False;
+  end;
+  Invalidate;
+end;
+
+procedure TVectArtCanvasControl.DrawRoutePreview(ACanvas: TCanvas);
+var Position,Tangent:TPointF; Path:TVectArtPathLayer; Marker:TRect;
+  Triangle: array[0..2] of TPoint;
+begin
+  if not FRoutePreviewActive or not TryMapRakuRoutePosition(FRoutePreviewData,
+    FRoutePreviewProgress,Position,Tangent,Path) then Exit;
+  Marker:=Rect(ToScreenX(Position.X)-8,ToScreenY(Position.Y)-18,
+    ToScreenX(Position.X)+9,ToScreenY(Position.Y)-1);
+  Triangle[0]:=Point(ToScreenX(Position.X)-9,ToScreenY(Position.Y)-7);
+  Triangle[1]:=Point(ToScreenX(Position.X)+9,ToScreenY(Position.Y)-7);
+  Triangle[2]:=Point(ToScreenX(Position.X),ToScreenY(Position.Y)+10);
+  DrawOverlayHandlePolygon(ACanvas,Triangle,$00FF8000,clBlack,2,1);
+  DrawOverlayHandleEllipse(ACanvas,Marker,$00FF8000,clBlack);
+end;
+
+procedure TVectArtCanvasControl.DrawRoutePreview(ACanvas: TDirect2DCanvas);
+var Position,Tangent:TPointF; Path:TVectArtPathLayer; Marker:TRect;
+  Triangle: array[0..2] of TPoint;
+begin
+  if not FRoutePreviewActive or not TryMapRakuRoutePosition(FRoutePreviewData,
+    FRoutePreviewProgress,Position,Tangent,Path) then Exit;
+  Marker:=Rect(ToScreenX(Position.X)-8,ToScreenY(Position.Y)-18,
+    ToScreenX(Position.X)+9,ToScreenY(Position.Y)-1);
+  Triangle[0]:=Point(ToScreenX(Position.X)-9,ToScreenY(Position.Y)-7);
+  Triangle[1]:=Point(ToScreenX(Position.X)+9,ToScreenY(Position.Y)-7);
+  Triangle[2]:=Point(ToScreenX(Position.X),ToScreenY(Position.Y)+10);
+  DrawOverlayHandlePolygon(ACanvas,Triangle,$00FF8000,clBlack,2,1);
+  DrawOverlayHandleEllipse(ACanvas,Marker,$00FF8000,clBlack);
+end;
+
 procedure TVectArtCanvasControl.EndPan;
 begin
   if not FPanning then
@@ -2486,7 +2610,8 @@ function CreationPathPreviewColor(State: TVectArtEditorState;
   Document: TVectArtDocument): TColor;
 var FromSelectedObject: Boolean;
 begin
-  if (State.MapElement = 'road') or (State.MapElement = 'river') then
+  if (State.MapElement = 'road') or (State.MapElement = 'river') or
+     (State.MapElement = 'route') then
     Result := State.MapPlacementColor(Document,FromSelectedObject)
   else if (Document <> nil) and (State.MapElement = 'jr') then
     Result := Document.CanvasLayer.JrPrimaryColor
@@ -3193,6 +3318,7 @@ begin
       FTextureInteraction.Draw(Direct2DCanvas);
       FMapPathEditor.Configure(FDocument,FEditorState,EditHistory,FCanvasBounds,FZoom);
       FMapPathEditor.Draw(Direct2DCanvas);
+      DrawRoutePreview(Direct2DCanvas);
       DrawTextEditingOverlayDirect2D(Direct2DCanvas);
       if StrokeWidthCursorVisible then
         DrawStrokeWidthCursor(Direct2DCanvas, FPointerPosition,
@@ -3844,6 +3970,7 @@ begin
   FTextureInteraction.Draw(Canvas);
   FMapPathEditor.Configure(FDocument,FEditorState,EditHistory,FCanvasBounds,FZoom);
   FMapPathEditor.Draw(Canvas);
+  DrawRoutePreview(Canvas);
   DrawTextEditingOverlay(Canvas);
   if StrokeWidthCursorVisible then
     DrawStrokeWidthCursor(Canvas, FPointerPosition,

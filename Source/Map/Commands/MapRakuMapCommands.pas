@@ -163,7 +163,8 @@ begin
   FKind:=Kind;
   FNewPreset:=Color;
   if FKind='road' then FOldPreset:=Document.CanvasLayer.RoadPresetColor
-  else FOldPreset:=Document.CanvasLayer.RiverPresetColor;
+  else if FKind='river' then FOldPreset:=Document.CanvasLayer.RiverPresetColor
+  else FOldPreset:=Document.CanvasLayer.RoutePresetColor;
   if ApplyExisting then
     for I:=1 to Document.LayerCount-1 do Collect(Document[I]);
 end;
@@ -192,7 +193,8 @@ begin
   FDocument.BeginUpdate;
   try
     if FKind='road' then FDocument.CanvasLayer.RoadPresetColor:=FNewPreset
-    else FDocument.CanvasLayer.RiverPresetColor:=FNewPreset;
+    else if FKind='river' then FDocument.CanvasLayer.RiverPresetColor:=FNewPreset
+    else FDocument.CanvasLayer.RoutePresetColor:=FNewPreset;
     for Item in FItems do begin
       Item.Path.StrokeColor:=FNewPreset;
       Item.Path.MapColorOverride:=False;
@@ -207,7 +209,8 @@ begin
   FDocument.BeginUpdate;
   try
     if FKind='road' then FDocument.CanvasLayer.RoadPresetColor:=FOldPreset
-    else FDocument.CanvasLayer.RiverPresetColor:=FOldPreset;
+    else if FKind='river' then FDocument.CanvasLayer.RiverPresetColor:=FOldPreset
+    else FDocument.CanvasLayer.RoutePresetColor:=FOldPreset;
     for Item in FItems do begin
       Item.Path.StrokeColor:=Item.Color;
       Item.Path.MapColorOverride:=Item.OverrideColor;
@@ -222,12 +225,15 @@ procedure ApplyMapColorPreset(Document: TVectArtDocument;
 var Command: TMapColorPresetCommand;
 begin
   if (Document=nil) or (Source=nil) or Source.Locked or
-    not ((Source.MapElement='road') or (Source.MapElement='river')) then Exit;
+    not ((Source.MapElement='road') or (Source.MapElement='river') or
+      (Source.MapElement='route')) then Exit;
   if not ApplyExisting and
     (((Source.MapElement='road') and
       (Document.CanvasLayer.RoadPresetColor=Source.StrokeColor)) or
      ((Source.MapElement='river') and
-      (Document.CanvasLayer.RiverPresetColor=Source.StrokeColor))) then Exit;
+      (Document.CanvasLayer.RiverPresetColor=Source.StrokeColor)) or
+     ((Source.MapElement='route') and
+      (Document.CanvasLayer.RoutePresetColor=Source.StrokeColor))) then Exit;
   Command:=TMapColorPresetCommand.Create(Document,Source.MapElement,
     Source.StrokeColor,ApplyExisting);
   Command.Execute;
@@ -239,10 +245,11 @@ procedure SetMapPlacementPreset(Document: TVectArtDocument;
   ApplyExisting: Boolean);
 var Command: TMapColorPresetCommand;
 begin
-  if (Document=nil) or not ((Kind='road') or (Kind='river')) then Exit;
+  if (Document=nil) or not ((Kind='road') or (Kind='river') or (Kind='route')) then Exit;
   if not ApplyExisting and
     (((Kind='road') and (Document.CanvasLayer.RoadPresetColor=Color)) or
-     ((Kind='river') and (Document.CanvasLayer.RiverPresetColor=Color))) then Exit;
+     ((Kind='river') and (Document.CanvasLayer.RiverPresetColor=Color)) or
+     ((Kind='route') and (Document.CanvasLayer.RoutePresetColor=Color))) then Exit;
   Command:=TMapColorPresetCommand.Create(Document,Kind,Color,ApplyExisting);
   Command.Execute;
   if History<>nil then History.AddApplied(Command) else Command.Free;
@@ -252,6 +259,7 @@ function NewMapPath(const Data:TVectArtPathData):TVectArtPathLayer;
 begin
   Result:=TVectArtPathLayer.Create(Data.Name,Data.Vertices,Data.Closed);
   Result.MapElement:=Data.MapElement; Result.StrokeWidth:=Data.StrokeWidth;
+  Result.RouteId:=Data.RouteId;
   Result.MapColorOverride:=Data.MapColorOverride;
   Result.MapStepCount:=Data.MapStepCount;
   Result.LineCap:=Data.LineCap; Result.StrokeColor:=Data.StrokeColor;

@@ -334,6 +334,16 @@ begin
       Group.AddChild(ChildClone);
     end;
     Group.MapSymbol := TMapRakuGroupLayer(Source).MapSymbol;
+    Group.RouteMarkerKind := TMapRakuGroupLayer(Source).RouteMarkerKind;
+    Group.RoutePathId := TMapRakuGroupLayer(Source).RoutePathId;
+    Group.RouteMarkerPosition := TMapRakuGroupLayer(Source).RouteMarkerPosition;
+    Group.HasRouteMarkerPosition := TMapRakuGroupLayer(Source).HasRouteMarkerPosition;
+    // マーカーの複製は元ルートへ暗黙に共有せず、再配置時に再関連付けする。
+    if Group.RouteMarkerKind<>'' then
+    begin
+      Group.RoutePathId := '';
+      Group.HasRouteMarkerPosition := False;
+    end;
     Group.MapSurface := TMapRakuGroupLayer(Source).MapSurface;
     Result := Group;
   end

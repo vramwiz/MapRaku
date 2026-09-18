@@ -11,7 +11,7 @@ uses System.SysUtils, System.Types, System.Classes, System.IOUtils, System.JSON,
   MapRakuDocument, MapRakuDocumentJson, MapRakuEditHistory, MapRakuEditorState,
   MapRakuMapCommands, MapRakuCrossings, MapRakuGroupCommands, MapRakuRenderer, MapRakuShapeCreation,
   MapRakuExport, MapRakuTheme, MapRakuSymbols, MapRakuMapPanel,
-  MapRakuFile, MapRakuPathSnap,
+  MapRakuFile, MapRakuPathSnap, MapRakuLayerGeometry, MapRakuRouteProgress,
   MapRakuTextGeometry, MapRakuMainForm, MapRakuPathEditor, MapRakuPathOperations,
   MapRakuRecentFiles,
   MapRakuProjectiveTransform, MapRakuSelectionGeometry, MapRakuTestSupport,
@@ -40,6 +40,10 @@ var D, Restored, CrossingDoc, ColorDoc, ColorRestored, PaletteDoc: TVectArtDocum
   CrossingImageHash,PlainImageHash: UInt64;
   FromSelectedObject: Boolean;
   SymbolLayer: TMapRakuGroupLayer;
+  SymbolBounds: TRectF;
+  RouteLayer: TVectArtPathLayer;
+  RouteMarker: TMapRakuGroupLayer;
+  RouteProgress: TMapRakuRouteProgressData;
   PixelIndex: Integer;
   HasSymbolPixels: Boolean;
   SelectionGeometry: TVectArtSelectionGeometry;
@@ -468,6 +472,58 @@ begin
       end;
       InsertMapSymbol(D,H,I,IntToStr(I+1)); H.Undo;
     end;
+    R := Road('jr',PointF(-180,-100),PointF(180,-100)); InsertMapPath(D,H,R);
+    R := Road('road',PointF(-180,-94),PointF(180,-94)); R.StrokeWidth:=40;
+    InsertMapPath(D,H,R);
+    PlaceMapSymbol(D,H,0,'駅',PointF(0,-94),True);
+    Check(TryGetMapRakuLayerBounds(D[D.LayerCount-1],SymbolBounds) and
+      (Abs(SymbolBounds.CenterPoint.Y+100)<0.5),
+      'Station must snap to railway, not the nearer road');
+    PlaceMapSymbol(D,H,2,'横断歩道',PointF(0,-94),True);
+    Check(TryGetMapRakuLayerBounds(D[D.LayerCount-1],SymbolBounds) and
+      (Abs(SymbolBounds.CenterPoint.Y+94)<0.5),
+      'Crosswalk must snap to road');
+    PlaceMapSymbol(D,H,3,'歩道橋',PointF(0,-94),True);
+    Check(TryGetMapRakuLayerBounds(D[D.LayerCount-1],SymbolBounds) and
+      (SymbolBounds.Height>=100) and (SymbolBounds.Width<=27),
+      'Pedestrian bridge must cross and span the road');
+    R := Road('route',PointF(-180,120),PointF(180,120));
+    R.RouteId:='route-progress-test';
+    InsertMapPath(D,H,R);
+    RouteLayer := TVectArtPathLayer(D[D.LayerCount-1]);
+    R := Road('route',PointF(180,120),PointF(360,120));
+    R.RouteId:='route-progress-test';
+    InsertMapPath(D,H,R);
+    PlaceMapSymbol(D,H,10,'開始点',PointF(-180,120),True);
+    PlaceMapSymbol(D,H,11,'終了点',PointF(360,120),True);
+    Check(ValidateRouteMarkers(D,E),'Route markers: '+E);
+    I:=D.LayerCount;
+    PlaceMapSymbol(D,H,10,'開始点',PointF(-180,120),True);
+    Check(D.LayerCount=I,'Duplicate route start must be ignored');
+    RouteMarker:=nil;
+    for I:=0 to D.LayerCount-1 do
+      if (D[I] is TMapRakuGroupLayer) and
+         (TMapRakuGroupLayer(D[I]).RouteMarkerKind='start') then
+        RouteMarker:=TMapRakuGroupLayer(D[I]);
+    Check((RouteMarker<>nil) and (RouteMarker.RoutePathId=RouteLayer.RouteId),
+      'Route start marker association');
+    Check(TryBuildMapRakuRoute(D,'route-progress-test',RouteProgress,E),
+      'Build logical route: '+E);
+    Check(TryMapRakuRoutePosition(RouteProgress,50,SnapPoint,Tangent,SnapPath) and
+      (Abs(SnapPoint.X-90)<0.5) and
+      (Abs(SnapPoint.Y-120)<0.5),'Distance-based route midpoint');
+    J:=SerializeVectArtDocument(D);
+    Check(TryDeserializeVectArtDocument(J,Restored,E),'Route marker JSON: '+E);
+    Check(ValidateRouteMarkers(Restored,E),'Restored route markers: '+E);
+    RouteMarker:=nil;
+    for I:=0 to Restored.LayerCount-1 do
+      if (Restored[I] is TMapRakuGroupLayer) and
+         (TMapRakuGroupLayer(Restored[I]).RouteMarkerKind='start') then
+        RouteMarker:=TMapRakuGroupLayer(Restored[I]);
+    Check((RouteMarker<>nil) and RouteMarker.HasRouteMarkerPosition and
+      (Abs(RouteMarker.RouteMarkerPosition.X+180)<0.5) and
+      (Abs(RouteMarker.RouteMarkerPosition.Y-120)<0.5),
+      'Route marker position must survive JSON');
     S.MapElement := 'jr'; S.CurrentTool := vetPath; S.LineStrokeWidth := 12;
     Creation.Configure(D,H,S,Rect(0,0,800,600),1);
     Creation.MouseDown(mbLeft,[],100,200); Creation.MouseDown(mbLeft,[],240,200);
