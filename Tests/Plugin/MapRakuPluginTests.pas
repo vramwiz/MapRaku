@@ -25,9 +25,8 @@ type
   PButtonItem = ^TFILTER_ITEM_BUTTON;
   PTrackItem = ^TFILTER_ITEM_TRACK;
   TModalDriver = class
-    Accept: Boolean;
-    SawEndpoint: Boolean;
     SawEditor: Boolean;
+    SawActionButtons: Boolean;
     procedure Tick(Sender: TObject);
     procedure HandleException(Sender: TObject; E: Exception);
   end;
@@ -126,6 +125,10 @@ begin
         'Missing progress parameter');
       Check(FindPluginItem(Table, 'マーカー画像の基準点') <> nil,
         'Missing marker image anchor parameter');
+      Check((FindPluginItem(Table, 'ポインターの種類') <> nil) and
+        (FindPluginItem(Table, 'ポインター色') <> nil) and
+        (FindPluginItem(Table, 'ポインターサイズ') <> nil),
+        'Missing direction pointer parameters');
       Check((FindPluginItem(Table, 'アニメーション') <> nil) and
         (FindPluginItem(Table, '揺れ') <> nil) and
         (FindPluginItem(Table, '揺れ量') <> nil) and
@@ -175,7 +178,8 @@ begin
 end;
 
 procedure TModalDriver.Tick(Sender: TObject);
-var I, J: Integer; Form: TMainForm; Button: TButton;
+var I, J, K: Integer; Form: TMainForm; Panel: TPanel;
+  Button: TButton;
 begin
   for I := 0 to Screen.FormCount - 1 do
     if (Screen.Forms[I] is TMainForm) and Screen.Forms[I].Visible then
@@ -183,24 +187,22 @@ begin
       TTimer(Sender).Enabled := False;
       Form := TMainForm(Screen.Forms[I]);
       SawEditor := True;
-      SawEndpoint := AutomationPipeShortName.StartsWith('MapRaku.Plugin.') and
-        (AutomationHostKind = 'aviutl2');
       Form.Document.SetCanvasSize(640, 360);
-      // 実際に配置された確定ボタンを押し、モーダル戻り値と保存データを確認する。
+      // ホスト画面には下部の操作パネルを置かない。右上の×と同じCancel結果で
+      // 閉じても、呼び出し側が現在のDocumentを確定することを検証する。
       for J := 0 to Form.ComponentCount - 1 do
         if Form.Components[J] is TPanel then
-          for var K := 0 to TPanel(Form.Components[J]).ComponentCount - 1 do
-            if TPanel(Form.Components[J]).Components[K] is TButton then
+        begin
+          Panel := TPanel(Form.Components[J]);
+          for K := 0 to Panel.ComponentCount - 1 do
+            if Panel.Components[K] is TButton then
             begin
-              Button := TButton(TPanel(Form.Components[J]).Components[K]);
-              if (Accept and (Button.Caption = '適用')) or
-                (not Accept and (Button.Caption = '取消')) then
-              begin
-                Button.Click;
-                Exit;
-              end;
+              Button := TButton(Panel.Components[K]);
+              SawActionButtons := SawActionButtons or
+                (Button.Caption = '適用') or (Button.Caption = '取消');
             end;
-      Form.ModalResult := mrAbort;
+        end;
+      Form.ModalResult := mrCancel;
     end;
 end;
 
@@ -213,19 +215,23 @@ begin
   Doc := TVectArtDocument.Create;
   try
     Timer.Interval := 100; Timer.OnTimer := Driver.Tick;
-    Driver.Accept := False; Timer.Enabled := True;
+    Timer.Enabled := True;
     Applied := EditMapRaku('', nil, 0, 0, W, H, Updated, ErrorText);
-    Check(Driver.SawEditor and Driver.SawEndpoint, 'Hosted editor was not shown: ' + ErrorText);
-    Check(not Applied and (Updated = '') and (ErrorText = ''), 'Cancel modified host data');
+    Check(Driver.SawEditor and not Driver.SawActionButtons,
+      'Hosted editor still has apply/cancel controls: ' + ErrorText);
+    Check(Applied and (ErrorText = ''), 'Closing editor did not apply data');
+    Check(TryDeserializeVectArtDocument(Updated, Doc, ErrorText),
+      'Closing editor produced invalid JSON');
+    Check(Doc.CanvasLayer.Width = 640, 'Closing editor lost edits');
     PreviousPipe := AutomationPipeShortName;
-    Driver.Accept := True; Timer.Enabled := True;
+    Timer.Enabled := True;
     Applied := EditMapRaku('', nil, 0, 0, W, H, Updated, ErrorText);
     Check(Applied and (ErrorText = ''), 'Apply failed: ' + ErrorText);
     Check(AutomationPipeShortName <> PreviousPipe, 'Reopened editor reused old endpoint');
     Check(TryDeserializeVectArtDocument(Updated, Doc, ErrorText), 'Apply JSON invalid');
     Check(Doc.CanvasLayer.Width = 640, 'Apply lost edits');
   finally Application.OnException := nil; Doc.Free; Timer.Free; Driver.Free; end;
-  Writeln('PASS common modal UI, cancel/apply, fresh endpoint');
+  Writeln('PASS hosted editor close/apply and full editing area');
 end;
 
 procedure TestBackgrounds;

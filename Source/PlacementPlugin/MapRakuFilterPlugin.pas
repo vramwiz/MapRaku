@@ -38,20 +38,22 @@ var
   ProgressItem, MarkerScaleItem, MarkerOpacityItem, MarkerOffsetXItem,
     MarkerOffsetYItem, RotationCorrectionItem, DisplayWidthItem,
     DisplayHeightItem, ScrollStartItem, AnimationAmountItem,
-    AnimationSpeedItem, AnimationAuxItem: TFILTER_ITEM_TRACK;
+    AnimationSpeedItem, AnimationAuxItem, PointerSizeItem: TFILTER_ITEM_TRACK;
   MarkerFileItem: TFILTER_ITEM_FILE;
   MarkerFileValue: array[0..32767] of WideChar;
   MarkerColorItem: TFILTER_ITEM_COLOR;
   MarkerSelectItem, MarkerRotationItem: TFILTER_ITEM_SELECT;
   MarkerImageAnchorItem: TFILTER_ITEM_SELECT;
-  RouteDisplayItem, AnimationModeItem: TFILTER_ITEM_SELECT;
+  RouteDisplayItem, AnimationModeItem, PointerKindItem: TFILTER_ITEM_SELECT;
   AnimationGroupItem: TFILTER_ITEM_GROUP;
   MarkerSelectList: array[0..1] of TFILTER_ITEM_SELECT_ITEM;
   MarkerRotationList: array[0..3] of TFILTER_ITEM_SELECT_ITEM;
   MarkerImageAnchorList: array[0..2] of TFILTER_ITEM_SELECT_ITEM;
   RouteDisplayList: array[0..2] of TFILTER_ITEM_SELECT_ITEM;
   AnimationModeList: array[0..5] of TFILTER_ITEM_SELECT_ITEM;
+  PointerKindList: array[0..2] of TFILTER_ITEM_SELECT_ITEM;
   RouteColorItem: TFILTER_ITEM_COLOR;
+  PointerColorItem: TFILTER_ITEM_COLOR;
   LayoutDataItem: TFILTER_ITEM_STRING;
   MapRakuContexts: TMapRakuFilterContexts;
   MapRakuSkiaAcquired: Boolean;
@@ -160,6 +162,9 @@ begin
         Motion.MarkerOffsetY := MarkerOffsetYItem.Value;
         Motion.MarkerRotation := MarkerRotationItem.Value;
         Motion.MarkerImageAnchor := MarkerImageAnchorItem.Value;
+        Motion.PointerKind := PointerKindItem.Value;
+        Motion.PointerColor := GetColor(PointerColorItem);
+        Motion.PointerSize := PointerSizeItem.Value;
         Motion.AnimationMode := AnimationModeItem.Value;
         Motion.AnimationAmount := AnimationAmountItem.Value;
         Motion.AnimationSpeed := AnimationSpeedItem.Value;
@@ -254,6 +259,11 @@ begin
     AddSelectList(MarkerRotationList, '進行方向＋回転補正', 2);
     AddSelect(MarkerRotationItem, 'マーカー回転', 0, @MarkerRotationList[0]);
     AddTrack(RotationCorrectionItem, '回転補正角度', 0, -180, 180, 0.1);
+    AddSelectList(PointerKindList, 'なし', 0);
+    AddSelectList(PointerKindList, '三角', 1);
+    AddSelect(PointerKindItem, 'ポインターの種類', 0, @PointerKindList[0]);
+    AddColor(PointerColorItem, 'ポインター色', $00000000);
+    AddTrack(PointerSizeItem, 'ポインターサイズ', 10, 1, 100, 1);
     AddTrack(DisplayWidthItem, '表示幅', 1920, 1, 16384, 1);
     AddTrack(DisplayHeightItem, '表示高さ', 1080, 1, 16384, 1);
     AddTrack(ScrollStartItem, 'スクロール開始率', 25, 0, 50, 1);

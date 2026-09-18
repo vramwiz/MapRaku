@@ -6,7 +6,7 @@ interface
 uses
   System.SysUtils;
 
-// 適用だけがTrueを返す。取消では元データを保持し、ErrorMessageを空にする。
+// 編集画面を閉じた時点のDocumentを返す。ホスト内では取消操作を設けない。
 function EditMapRaku(const SerializedData: string;
   const BackgroundPixels: TBytes; BackgroundWidth, BackgroundHeight: Integer;
   CanvasWidth, CanvasHeight: Integer;
@@ -15,39 +15,8 @@ function EditMapRaku(const SerializedData: string;
 implementation
 
 uses
-  Winapi.Windows, Vcl.Forms, Vcl.Controls, Vcl.ExtCtrls, Vcl.StdCtrls,
-  System.UITypes, MapRakuDocumentJson, MapRakuPluginDocument,
-  MapRakuMainForm, MapRakuAutomationWire;
-
-procedure AddSessionControls(EditorForm: TMainForm);
-var Panel: TPanel; Button: TButton; Endpoint: TEdit;
-begin
-  Panel := TPanel.Create(EditorForm);
-  Panel.Parent := EditorForm;
-  Panel.Align := alBottom;
-  Panel.Height := 38;
-  Panel.BevelOuter := bvNone;
-  Button := TButton.Create(Panel);
-  Button.Parent := Panel;
-  Button.Align := alRight;
-  Button.Width := 100;
-  Button.Caption := '取消';
-  Button.ModalResult := mrCancel;
-  // EnterとEscは既存の作図操作に使うため、既定／取消キーには割り当てない。
-  Button := TButton.Create(Panel);
-  Button.Parent := Panel;
-  Button.Align := alRight;
-  Button.Width := 100;
-  Button.Caption := '適用';
-  Button.ModalResult := mrOk;
-  Endpoint := TEdit.Create(Panel);
-  Endpoint.Parent := Panel;
-  Endpoint.Align := alClient;
-  Endpoint.ReadOnly := True;
-  Endpoint.Text := AutomationPipeShortName;
-  Endpoint.Hint := 'AI接続先（コピーしてSet-MapRakuEndpointへ渡す）';
-  Endpoint.ShowHint := True;
-end;
+  Winapi.Windows, Vcl.Forms, MapRakuDocumentJson, MapRakuPluginDocument,
+  MapRakuMainForm;
 
 function EnterEditorDpiContext: DPI_AWARENESS_CONTEXT;
 begin
@@ -99,8 +68,9 @@ begin
         SerializedData, CanvasWidth, CanvasHeight,
         ErrorMessage) then
         Exit;
-      AddSessionControls(EditorForm);
-      if EditorForm.ShowModal <> mrOk then Exit;
+      // 下部の適用／取消パネルを置かず、右上の×を含む通常の閉じる操作を
+      // 確定として扱う。確保していた高さはそのまま編集領域へ戻る。
+      EditorForm.ShowModal;
       UpdatedData := SerializeVectArtDocument(EditorForm.Document);
       Result := True;
     except

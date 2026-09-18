@@ -9,6 +9,9 @@ type
     MarkerColor: TColor;
     MarkerRotation: Integer;
     MarkerImageAnchor: Integer;
+    PointerKind: Integer;
+    PointerColor: TColor;
+    PointerSize: Double;
     AnimationMode: Integer;
     AnimationAmount, AnimationSpeed, AnimationAux, AnimationTime: Double;
     RouteDisplay: Integer;
@@ -127,6 +130,49 @@ begin
   Steps:=Max(1,Ceil(Hypot(B.X-A.X,B.Y-A.Y)));
   for I:=0 to Steps do begin P:=A+(B-A)*(I/Steps); Disc(Target,P,Radius,Color,255); end;
 end;
+procedure DrawDirectionPointer(Document:TVectArtDocument;
+  Target,MarkerImage:TVectArtRenderBuffer; const Motion:TMapRakuPluginRouteMotion;
+  const MarkerAnchor,Tangent:TPointF; MarkerScale,MarkerAngle:Single;
+  Opacity:Byte);
+var Forward,Perpendicular,Center,Offset,A,B,C:TPointF;
+  Length,HalfWidth,HalfHeight,Extent,Size,Sine,Cosine,AnchorY:Single;
+begin
+  if Motion.PointerKind<>1 then Exit;
+  // Document座標の接線を出力ピクセル座標へ直す。表示の縦横比が異なっても
+  // ポインターだけが斜めにずれないよう、画面上の方向で外周を求める。
+  Forward:=PointF(Tangent.X*Target.Width/Document.CanvasLayer.Width,
+    Tangent.Y*Target.Height/Document.CanvasLayer.Height);
+  Length:=Hypot(Forward.X,Forward.Y);
+  if Length<=0 then Exit;
+  Forward:=Forward*(1/Length);
+  Perpendicular:=PointF(-Forward.Y,Forward.X);
+  if (MarkerImage<>nil) and (MarkerImage.Width>0) and
+     (MarkerImage.Height>0) then begin
+    HalfWidth:=MarkerImage.Width*MarkerScale*0.5;
+    HalfHeight:=MarkerImage.Height*MarkerScale*0.5;
+    if Motion.MarkerImageAnchor=1 then
+      AnchorY:=MarkerImage.Height
+    else
+      AnchorY:=MarkerImage.Height*0.5;
+    Offset:=Rotate(PointF(0,(MarkerImage.Height*0.5-AnchorY)*MarkerScale),
+      PointF(0,0),MarkerAngle);
+  end else begin
+    // 内蔵ピンの描画範囲（-20～10px）を使い、見た目の外側から出す。
+    HalfWidth:=10*MarkerScale;
+    HalfHeight:=15*MarkerScale;
+    Offset:=Rotate(PointF(0,-5*MarkerScale),PointF(0,0),MarkerAngle);
+  end;
+  Center:=MarkerAnchor+Offset;
+  SinCos(DegToRad(MarkerAngle),Sine,Cosine);
+  Extent:=Abs(Forward.X*Cosine+Forward.Y*Sine)*HalfWidth+
+    Abs(-Forward.X*Sine+Forward.Y*Cosine)*HalfHeight;
+  Size:=Max(1,Motion.PointerSize);
+  Center:=Center+Forward*(Extent+Size*0.75);
+  A:=Center+Forward*Size;
+  B:=Center-Forward*(Size*0.6)+Perpendicular*(Size*0.6);
+  C:=Center-Forward*(Size*0.6)-Perpendicular*(Size*0.6);
+  Triangle(Target,A,B,C,Motion.PointerColor,Opacity);
+end;
 function DocumentLayerIndex(Document:TVectArtDocument; Path:TVectArtPathLayer):Integer;
 var I:Integer;
 begin
@@ -182,6 +228,8 @@ begin
     Triangle(Target,A,B,C,clBlack,Alpha); Triangle(Target,Rotate(PP+PointF(-7*Scale,-7*Scale),PP,Angle),Rotate(PP+PointF(7*Scale,-7*Scale),PP,Angle),C,Motion.MarkerColor,Alpha);
     Disc(Target,Rotate(PP+PointF(0,-10*Scale),PP,Angle),10*Scale,clBlack,Alpha); Disc(Target,Rotate(PP+PointF(0,-10*Scale),PP,Angle),8*Scale,Motion.MarkerColor,Alpha);
   end;
+  DrawDirectionPointer(Document,Target,MarkerImage,Motion,PP,T,Scale,Angle,
+    Alpha);
 end;
 function TryMapRakuPluginRoutePosition(Document:TVectArtDocument;
   ProgressPercent:Double; out Position:TPointF):Boolean;
