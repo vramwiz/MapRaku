@@ -1,17 +1,34 @@
-# 自分で起動した空のDebugアプリだけを操作し、利用者が編集中のプロセスへ接続しない。
-param([ValidateSet('Debug','Release')][string]$Config='Debug')
+﻿# 自分で起動した空のDebugアプリだけを操作し、利用者が編集中のプロセスへ接続しない。
+param([ValidateSet('Debug','Release')][string]$Config='Debug', [switch]$PluginEditor)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $PSScriptRoot 'Automation/MapRakuPipe.psm1') -Force
 . (Join-Path $root 'Tests/Automation/MapRakuSample.ps1')
 . (Join-Path $root 'Tests/Automation/MapRakuPipeChecks.ps1')
-if (Get-Process MapRaku -ErrorAction SilentlyContinue) { throw 'Close MapRaku before running isolated pipe tests.' }
+if (-not $PluginEditor -and (Get-Process MapRaku -ErrorAction SilentlyContinue)) { throw 'Close MapRaku before running isolated pipe tests.' }
 $output = Join-Path $root 'TestOutput'
 $null = New-Item -ItemType Directory -Path $output -Force
-$app = Start-Process -FilePath (Join-Path $root "Win64/$Config/MapRaku.exe") -WorkingDirectory $root -WindowStyle Hidden -PassThru
+if ($PluginEditor) {
+    $app = Start-Process -FilePath (Join-Path $root "TestOutput/Plugin/$Config/MapRakuPluginTests.exe") -ArgumentList '-serve','-test' -WorkingDirectory $root -WindowStyle Hidden -PassThru
+} else {
+    $app = Start-Process -FilePath (Join-Path $root "Win64/$Config/MapRaku.exe") -WorkingDirectory $root -WindowStyle Hidden -PassThru
+}
 try {
+    if ($PluginEditor) {
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            if ($app.HasExited) { throw 'Plugin editor exited during startup.' }
+            $endpoints = @(Get-MapRakuEndpoints | Where-Object { $_ -like "MapRaku.Plugin.$($app.Id).*" })
+            if ($endpoints.Count -eq 1) { break }
+            Start-Sleep -Milliseconds 50
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if ($endpoints.Count -ne 1) { throw 'Test plugin endpoint was not found uniquely.' }
+        Set-MapRakuEndpoint $endpoints[0]
+    }
     $caps = Invoke-MapRakuPipe @{command='get_capabilities'} -TimeoutMs 30000
+    Assert-Map ($caps.process_id -eq $app.Id) 'Connected to another process'
+    if ($PluginEditor) { Assert-Map ($caps.host_kind -eq 'aviutl2') 'Wrong editor mode' }
     Assert-Map ($caps.protocol_version -eq 2) 'Protocol version mismatch'
     Assert-Map ($caps.capabilities.image_transport -eq 'pipe_blob_base64') 'Images must use pipe'
     $schema = Invoke-MapRakuPipe @{command='get_map_schema'}
@@ -114,11 +131,12 @@ try {
     Assert-Map ((Invoke-MapRakuPipe @{command='get_document'}).snapshot.state_token -eq $saved.state_token) 'Save/load mismatch'
     $null = Invoke-MapRakuPipe (New-MapRakuMutation 'clear_reference')
     Assert-Map (-not (Invoke-MapRakuPipe @{command='get_reference'}).result.conditions_current) 'Reference clear failed'
-    $summary = @{status='passed';protocol=2;layers=$saved.document.layers.Count;crossings=$saved.document.crossingRelations.Count;
+    $summary = @{status='passed';protocol=2;host_kind=$caps.host_kind;layers=$saved.document.layers.Count;crossings=$saved.document.crossingRelations.Count;
         checks=@('schema','chunk roundtrip','chunk retries','preview isolation','atomic rollback','request replay','receipt lookup',
             'stale tokens','locked ancestor','all placement kinds','shared endpoint connection','update/delete','undo/redo','reference upload',
             'reference pixels','reference failures','fixed orientation/dimensions','render preview','save/load')}
-    $summary | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $output 'pipe-test-report.json') -Encoding utf8
+    $reportName = if ($PluginEditor) { "pipe-plugin-$Config-report.json" } else { 'pipe-test-report.json' }
+    $summary | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $output $reportName) -Encoding utf8
     Write-Output ($summary | ConvertTo-Json -Depth 10 -Compress)
 } finally {
     # テストが起動したPIDだけを終了する。Releaseの保存確認で自動検証を止めない。

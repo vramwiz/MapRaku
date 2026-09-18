@@ -1,5 +1,21 @@
-# アプリへの入出力をNamed Pipeに限定する。画像のローカル保存は受信後の表示用だけに使う。
+﻿# アプリへの入出力をNamed Pipeに限定する。画像のローカル保存は受信後の表示用だけに使う。
 Set-StrictMode -Version Latest
+$script:MapRakuPipeName = 'MapRaku.v1'
+
+function Set-MapRakuEndpoint {
+    param([Parameter(Mandatory)][string]$PipeName)
+    if ($PipeName -notmatch '^MapRaku\.(v1|Plugin\.[0-9]+\.\{[0-9A-Fa-f-]+\})$') {
+        throw 'Invalid MapRaku endpoint name.'
+    }
+    # 一度選んだ編集セッションへ固定し、閉じた後に他の文書へ自動接続しない。
+    $script:MapRakuPipeName = $PipeName
+}
+
+function Get-MapRakuEndpoints {
+    [IO.Directory]::GetFiles('\\.\pipe\') |
+        ForEach-Object { $_.Substring($_.LastIndexOf('\') + 1) } |
+        Where-Object { $_ -eq 'MapRaku.v1' -or $_ -like 'MapRaku.Plugin.*' }
+}
 
 function Invoke-MapRakuPipe {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Request,
@@ -7,7 +23,7 @@ function Invoke-MapRakuPipe {
     $json = ConvertTo-Json -InputObject $Request -Depth 100 -Compress
     $bytes = [Text.Encoding]::UTF8.GetBytes($json)
     if ($bytes.Length -gt 4MB) { throw 'Request exceeds 4 MiB.' }
-    $pipe = [IO.Pipes.NamedPipeClientStream]::new('.', 'MapRaku.v1',
+    $pipe = [IO.Pipes.NamedPipeClientStream]::new('.', $script:MapRakuPipeName,
         [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
     $response = [IO.MemoryStream]::new()
     try {
@@ -103,4 +119,4 @@ function Receive-MapRakuBlob {
     }
 }
 
-Export-ModuleMember -Function Invoke-MapRakuPipe, Get-MapRakuTokens, New-MapRakuMutation, Send-MapRakuBlob, Receive-MapRakuBlob
+Export-ModuleMember -Function Set-MapRakuEndpoint, Get-MapRakuEndpoints, Invoke-MapRakuPipe, Get-MapRakuTokens, New-MapRakuMutation, Send-MapRakuBlob, Receive-MapRakuBlob

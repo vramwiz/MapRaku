@@ -6,7 +6,7 @@ interface
 uses
   System.SysUtils;
 
-// 保存値と参照背景を編集画面へ渡し、確定後のversion 15 JSONまたは失敗理由を返す。
+// 適用だけがTrueを返す。取消では元データを保持し、ErrorMessageを空にする。
 function EditMapRaku(const SerializedData: string;
   const BackgroundPixels: TBytes; BackgroundWidth, BackgroundHeight: Integer;
   CanvasWidth, CanvasHeight: Integer;
@@ -15,8 +15,39 @@ function EditMapRaku(const SerializedData: string;
 implementation
 
 uses
-  Winapi.Windows, Vcl.Forms, MapRakuDocumentJson, MapRakuPluginDocument,
-  MapRakuMainForm;
+  Winapi.Windows, Vcl.Forms, Vcl.Controls, Vcl.ExtCtrls, Vcl.StdCtrls,
+  System.UITypes, MapRakuDocumentJson, MapRakuPluginDocument,
+  MapRakuMainForm, MapRakuAutomationWire;
+
+procedure AddSessionControls(EditorForm: TMainForm);
+var Panel: TPanel; Button: TButton; Endpoint: TEdit;
+begin
+  Panel := TPanel.Create(EditorForm);
+  Panel.Parent := EditorForm;
+  Panel.Align := alBottom;
+  Panel.Height := 38;
+  Panel.BevelOuter := bvNone;
+  Button := TButton.Create(Panel);
+  Button.Parent := Panel;
+  Button.Align := alRight;
+  Button.Width := 100;
+  Button.Caption := '取消';
+  Button.ModalResult := mrCancel;
+  // EnterとEscは既存の作図操作に使うため、既定／取消キーには割り当てない。
+  Button := TButton.Create(Panel);
+  Button.Parent := Panel;
+  Button.Align := alRight;
+  Button.Width := 100;
+  Button.Caption := '適用';
+  Button.ModalResult := mrOk;
+  Endpoint := TEdit.Create(Panel);
+  Endpoint.Parent := Panel;
+  Endpoint.Align := alClient;
+  Endpoint.ReadOnly := True;
+  Endpoint.Text := AutomationPipeShortName;
+  Endpoint.Hint := 'AI接続先（コピーしてSet-MapRakuEndpointへ渡す）';
+  Endpoint.ShowHint := True;
+end;
 
 function EnterEditorDpiContext: DPI_AWARENESS_CONTEXT;
 begin
@@ -58,18 +89,18 @@ begin
   PreviousDpiContext := EnterEditorDpiContext;
   try
     try
-      EditorForm := TMainForm.Create(nil);
-      EditorForm.Caption := '画面レイアウト - 編集';
+      EditorForm := TMainForm.CreateHosted(nil);
+      EditorForm.Caption := '地図 - 編集';
       EditorForm.Position := poScreenCenter;
       EditorForm.SetFileDropCaptionEnabled(True);
-      EditorForm.SetCanvasSettingsVisible(False);
-      EditorForm.SetReferenceBackgroundRgba(BackgroundPixels,
+      EditorForm.SetHostBackgroundRgba(BackgroundPixels,
         BackgroundWidth, BackgroundHeight);
       if not InitializeMapRakuPluginDocument(EditorForm.Document,
         SerializedData, CanvasWidth, CanvasHeight,
         ErrorMessage) then
         Exit;
-      EditorForm.ShowModal;
+      AddSessionControls(EditorForm);
+      if EditorForm.ShowModal <> mrOk then Exit;
       UpdatedData := SerializeVectArtDocument(EditorForm.Document);
       Result := True;
     except

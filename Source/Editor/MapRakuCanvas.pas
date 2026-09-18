@@ -48,6 +48,7 @@ type
     FPointerInside: Boolean;
     FPointerPosition: TPoint;
     FReferenceBackground: TBitmap;
+    FHostBackground: TBitmap; // AIの元地図とは別に、編集開始時の映像を保持する。
     FReferenceBackgroundToken: string; // 参照背景だけの更新もAIの配置案から検出する。
     FPlacementPreview: TMapRakuPlacementPreview; // 確定前の塗り図形画像を所有する。
     FRenderCache: TMapRakuCanvasRenderCache; // 文書画像、移動プレビュー、ズーム再利用を所有する。
@@ -99,6 +100,7 @@ type
     function ToScreenY(Value: Single): Integer;
     function GetEditHistory: TVectArtEditHistory;
     function HasReferenceBackground: Boolean;
+    function DisplayBackground: TBitmap;
     procedure BeginMovePreview;
     procedure EndMovePreview;
     procedure UpdateRenderedDocument;
@@ -159,6 +161,9 @@ type
       Width, Height: Integer);
     // 呼出側所有のBitmapへ参照背景を複写する。背景なしなら空画像にする。
     procedure CopyReferenceBackground(Target: TBitmap);
+    procedure SetHostBackgroundRgba(const Pixels: TBytes; Width, Height: Integer);
+    procedure CopyDisplayBackground(Target: TBitmap);
+    function DisplayBackgroundKind: string;
     property ReferenceBackgroundToken: string read FReferenceBackgroundToken;
     // コントロール座標が用紙内なら、中央原点の文書座標へ変換する。
     function TryClientPointToLogical(const ClientPoint: TPoint;
@@ -286,6 +291,7 @@ begin
   FTransformInteraction := TMapRakuTransformInteraction.Create;
   FMapPathEditor := TMapPathEditor.Create;
   FInteraction := TVectArtCanvasInteraction.Create;
+  FHostBackground := Vcl.Graphics.TBitmap.Create;
   FReferenceBackground := Vcl.Graphics.TBitmap.Create;
   FReferenceBackground.PixelFormat := pf32bit;
   FRenderCache := TMapRakuCanvasRenderCache.Create;
@@ -322,6 +328,7 @@ begin
   FZoomRenderTimer.Free;
   FPlacementPreview.Free;
   FRenderCache.Free;
+  FHostBackground.Free;
   FReferenceBackground.Free;
   FShapeCreation.Free;
   FGradientInteraction.Free;
@@ -2574,9 +2581,9 @@ begin
       CanvasLayer := nil;
       if FDocument <> nil then
         CanvasLayer := FDocument.CanvasLayer;
-      if HasReferenceBackground then
+      if not DisplayBackground.Empty then
       begin
-        ReferenceBitmap := Direct2DCanvas.CreateBitmap(FReferenceBackground);
+        ReferenceBitmap := Direct2DCanvas.CreateBitmap(DisplayBackground);
         if ReferenceBitmap = nil then
           raise EInvalidOp.Create('Direct2D reference background creation failed');
         ReferenceRect := D2D1RectF(FCanvasBounds.Left, FCanvasBounds.Top,
@@ -3277,9 +3284,9 @@ begin
   CanvasLayer := nil;
   if FDocument <> nil then
     CanvasLayer := FDocument.CanvasLayer;
-  if HasReferenceBackground then
+  if not DisplayBackground.Empty then
   begin
-    Canvas.StretchDraw(FCanvasBounds, FReferenceBackground);
+    Canvas.StretchDraw(FCanvasBounds, DisplayBackground);
   end
   else if (CanvasLayer <> nil) and CanvasLayer.Visible and
     not CanvasLayer.Transparent then
@@ -3844,31 +3851,25 @@ begin
       Max(MulDiv(4, CurrentPPI, 96), 2));
 end;
 
-procedure TVectArtCanvasControl.SetReferenceBackgroundRgba(
+procedure SetBackgroundBitmap(Bitmap: TBitmap;
   const Pixels: TBytes; Width, Height: Integer);
 var
   Destination: PByte;
   Source: PByte;
   X: Integer;
   Y: Integer;
-  Token: TGUID;
 begin
-  CreateGUID(Token);
-  FReferenceBackgroundToken := GUIDToString(Token);
-  FReferenceBackground.SetSize(0, 0);
+  Bitmap.SetSize(0, 0);
   if (Width <= 0) or (Height <= 0) or
     (Length(Pixels) <> NativeInt(Width) * Height * 4) then
-  begin
-    Invalidate;
     Exit;
-  end;
-  FReferenceBackground.PixelFormat := pf32bit;
-  FReferenceBackground.SetSize(Width, Height);
-  FReferenceBackground.AlphaFormat := afIgnored;
+  Bitmap.PixelFormat := pf32bit;
+  Bitmap.SetSize(Width, Height);
+  Bitmap.AlphaFormat := afIgnored;
   Source := @Pixels[0];
   for Y := 0 to Height - 1 do
   begin
-    Destination := FReferenceBackground.ScanLine[Y];
+    Destination := Bitmap.ScanLine[Y];
     for X := 0 to Width - 1 do
     begin
       Destination[0] := Source[2];
@@ -3879,7 +3880,43 @@ begin
       Inc(Source, 4);
     end;
   end;
+end;
+
+procedure TVectArtCanvasControl.SetReferenceBackgroundRgba(
+  const Pixels: TBytes; Width, Height: Integer);
+var Token: TGUID;
+begin
+  CreateGUID(Token);
+  FReferenceBackgroundToken := GUIDToString(Token);
+  SetBackgroundBitmap(FReferenceBackground, Pixels, Width, Height);
   Invalidate;
+end;
+
+procedure TVectArtCanvasControl.SetHostBackgroundRgba(
+  const Pixels: TBytes; Width, Height: Integer);
+begin
+  SetBackgroundBitmap(FHostBackground, Pixels, Width, Height);
+  Invalidate;
+end;
+
+function TVectArtCanvasControl.DisplayBackground: TBitmap;
+begin
+  Result := FReferenceBackground;
+  // 元画像は作図用。ホスト映像は透明キャンバスのときだけ表示する。
+  if not HasReferenceBackground and (FDocument <> nil) and
+    (FDocument.CanvasLayer.Transparent or not FDocument.CanvasLayer.Visible) then
+    Result := FHostBackground;
+end;
+
+function TVectArtCanvasControl.DisplayBackgroundKind: string;
+begin
+  if DisplayBackground.Empty then Exit('none');
+  if HasReferenceBackground then Result := 'reference' else Result := 'host';
+end;
+
+procedure TVectArtCanvasControl.CopyDisplayBackground(Target: TBitmap);
+begin
+  Target.Assign(DisplayBackground);
 end;
 
 procedure TVectArtCanvasControl.CopyReferenceBackground(Target: TBitmap);

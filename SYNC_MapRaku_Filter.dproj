@@ -1,0 +1,308 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{5C520506-60EA-43D9-B5DD-5A44E6665F25}</ProjectGuid>
+        <ProjectVersion>20.4</ProjectVersion>
+        <FrameworkType>None</FrameworkType>
+        <Config Condition="'$(Config)'==''">Release</Config>
+        <Platform Condition="'$(Platform)'==''">Win64</Platform>
+        <ProjectName Condition="'$(ProjectName)'==''">SYNC_MapRaku_Filter</ProjectName>
+        <TargetedPlatforms>2</TargetedPlatforms>
+        <AppType>Library</AppType>
+        <MainSource>SYNC_MapRaku_Filter.dpr</MainSource>
+        <Base>True</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Debug' or '$(Cfg_1)'!=''">
+        <Cfg_1>true</Cfg_1>
+        <CfgParent>Base</CfgParent>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win64)'!=''">
+        <Cfg_1_Win64>true</Cfg_1_Win64>
+        <CfgParent>Cfg_1</CfgParent>
+        <Cfg_1>true</Cfg_1>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Release' or '$(Cfg_2)'!=''">
+        <Cfg_2>true</Cfg_2>
+        <CfgParent>Base</CfgParent>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Cfg_2)'=='true') or '$(Cfg_2_Win64)'!=''">
+        <Cfg_2_Win64>true</Cfg_2_Win64>
+        <CfgParent>Cfg_2</CfgParent>
+        <Cfg_2>true</Cfg_2>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Base)'!=''">
+        <DCC_UnitSearchPath>Lib\AviUtl2;Source\PlacementPlugin;Lib\ColorPicker;Lib\DarkMenu;Lib\HorizontalTrackBar;Lib\InputMethod;Lib\Pipe;Lib\ShortcutAction;Lib\TextRenderer;Lib\VerticalScrollBar;Source\Automation;Source\Automation\Map;Source\Automation\Transport;Source\Core\Commands;Source\Core\Commands\Path;Source\Core\Commands\Layer;Source\Core\Commands\Layer\Group;Source\Core\Commands\Layer\Transform;Source\Core\Commands\Shape;Source\Core\Commands\Text;Source\Core\Geometry;Source\Core\Geometry\Shape;Source\Core\Geometry\Text;Source\Core\Model;Source\Core\Model\Pattern;Source\Editor;Source\Editor\Creation;Source\Editor\Interaction;Source\Editor\Interaction\Filter;Source\Editor\Interaction\Gradient;Source\Editor\Interaction\Group;Source\Editor\Interaction\Shape;Source\Editor\Interaction\Text;Source\Editor\Interaction\Texture;Source\Editor\Interaction\Transform;Source\Layers;Source\Layers\Clipboard;Source\Layers\List;Source\Layers\Operations;Source\Layout;Source\Map\Commands;Source\Map\UI;Source\Map\Crossings;Source\Map\Editing;Source\Map\Rendering\Paths;Source\Map\Rendering\Crossings;Source\Map\Appearance;Source\Map\Export;Source\Map\Symbols;Source\ObjectProperties;Source\ObjectProperties\Color;Source\ObjectProperties\Color\Pattern;Source\ObjectProperties\Color\Texture;Source\ObjectProperties\Filters;Source\ObjectProperties\Geometry;Source\Persistence;Source\Rendering;Source\Rendering\Buffer;Source\Rendering\Cache;Source\Rendering\Overlay;Source\Rendering\Paint;Source\Rendering\Paint\Pattern;Source\Rendering\Paint\Stroke;Source\Shell;Source\Shell\Menus;Source\Shell\Toolbars;Source\ToolPalette;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_DcuOutput>$(MSBuildProjectDirectory)\$(Platform)\$(ProjectName)\$(Config)\DCU</DCC_DcuOutput>
+        <GenDll>true</GenDll>
+        <DCC_ExeOutput>.\Win64\Plugin\$(Config)</DCC_ExeOutput>
+        <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Winapi;Vcl;$(DCC_Namespace)</DCC_Namespace>
+        <SanitizedProjectName>SYNC_MapRaku_Filter</SanitizedProjectName>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
+        <Debugger_HostApplication>D:\aviutl2_v2.1.6a\aviutl2.exe</Debugger_HostApplication>
+        <Debugger_WorkingDirectory>D:\aviutl2_v2.1.6a</Debugger_WorkingDirectory>
+        <PreBuildEvent><![CDATA[if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
+        <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
+        <PostBuildEvent><![CDATA[copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll"&&copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll"]]></PostBuildEvent>
+        <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Cfg_2_Win64)'!=''">
+        <Debugger_HostApplication>D:\aviutl2_v2.1.6a\aviutl2.exe</Debugger_HostApplication>
+        <Debugger_WorkingDirectory>D:\aviutl2_v2.1.6a</Debugger_WorkingDirectory>
+        <PreBuildEvent><![CDATA[if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
+        <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
+        <PostBuildEvent><![CDATA[copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll"&&copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll"]]></PostBuildEvent>
+        <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
+    </PropertyGroup>
+    <ItemGroup>
+        <DelphiCompile Include="$(MainSource)">
+            <MainSource>MainSource</MainSource>
+        </DelphiCompile>
+        <DCCReference Include="Lib\AviUtl2\AviUtl2FilterTypes.pas"/>
+        <DCCReference Include="Lib\AviUtl2\PluginFilterTable.pas"/>
+        <DCCReference Include="Lib\AviUtl2\PluginFilterContextManager.pas"/>
+        <DCCReference Include="Source\PlacementPlugin\MapRakuFilterPlugin.pas"/>
+        <DCCReference Include="Source\PlacementPlugin\MapRakuFilterContext.pas"/>
+        <DCCReference Include="Source\PlacementPlugin\MapRakuPluginDocument.pas"/>
+        <DCCReference Include="Source\PlacementPlugin\MapRakuEditorHost.pas"/>
+        <DCCReference Include="Source\PlacementPlugin\MapRakuFrameCapture.pas"/>
+        <DCCReference Include="Source\Rendering\Buffer\MapRakuRenderBuffer.pas"/>
+        <DCCReference Include="Source\Core\Commands\Path\MapRakuPathEditSession.pas"/>
+        <DCCReference Include="Source\Map\Crossings\MapRakuCrossingGeometry.pas"/>
+        <DCCReference Include="Source\Map\Crossings\MapRakuBridgeSpans.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Crossings\MapRakuCrossingRenderer.pas"/>
+        <DCCReference Include="Source\Map\Editing\MapRakuPathEditor.pas"/>
+        <DCCReference Include="Source\Map\Export\MapRakuFile.pas"/>
+        <DCCReference Include="Source\Map\Editing\MapRakuPathSnap.pas"/>
+        <DCCReference Include="Source\Map\Appearance\MapRakuTheme.pas"/>
+        <DCCReference Include="Source\Map\Symbols\MapRakuSymbols.pas">
+            <ModuleName>MapRakuSymbolsk</ModuleName>
+        </DCCReference>
+        <DCCReference Include="Source\Map\Export\MapRakuExport.pas"/>
+        <DCCReference Include="Source\Map\Commands\MapRakuMapCommands.pas"/>
+        <DCCReference Include="Source\Map\Crossings\MapRakuCrossings.pas"/>
+        <DCCReference Include="Source\Map\UI\MapRakuMapPanel.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuPathRenderer.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuRailRenderer.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuRiverRenderer.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuRoadRenderer.pas"/>
+        <DCCReference Include="Source\Map\Rendering\Paths\MapRakuStairRenderer.pas"/>
+        <DCCReference Include="Lib\TextRenderer\TextRendererSkiaBootstrap.pas"/>
+        <DCCReference Include="Lib\TextRenderer\TextRendererTypes.pas"/>
+        <DCCReference Include="Lib\TextRenderer\TextRenderer.pas"/>
+        <DCCReference Include="Lib\TextRenderer\TextRendererSkiaRuntime.pas"/>
+        <DCCReference Include="Lib\TextRenderer\TextRendererSkia.pas"/>
+        <DCCReference Include="Lib\DarkMenu\VectArtDarkPopupMenu.pas"/>
+        <DCCReference Include="Lib\DarkMenu\VectArtDarkMenuGroup.pas"/>
+        <DCCReference Include="Lib\ShortcutAction\ShortcutAction.pas"/>
+        <DCCReference Include="Lib\HorizontalTrackBar\HorizontalTrackBarRenderer.pas"/>
+        <DCCReference Include="Lib\HorizontalTrackBar\HorizontalTrackBarControl.pas"/>
+        <DCCReference Include="Lib\Pipe\PipeServerTThread.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationBatch.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationFactory.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationSchema.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationValidation.pas"/>
+        <DCCReference Include="Source\Automation\Map\MapRakuAutomationValues.pas"/>
+        <DCCReference Include="Source\Automation\Transport\MapRakuAutomationBlobs.pas"/>
+        <DCCReference Include="Source\Automation\Transport\MapRakuAutomationReference.pas"/>
+        <DCCReference Include="Source\Automation\Transport\MapRakuAutomationSession.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationWire.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationServices.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationVisuals.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationText.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationLayout.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationProtocol.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationPipeServer.pas"/>
+        <DCCReference Include="Source\Automation\MapRakuAutomationDocumentCommand.pas"/>
+        <DCCReference Include="Source\Editor\Creation\MapRakuPlacementPreview.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\MapRakuColorHistory.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\MapRakuColorCode.pas"/>
+        <DCCReference Include="Source\Shell\MapRakuMainForm.pas">
+            <Form>MainForm</Form>
+        </DCCReference>
+        <DCCReference Include="Source\Shell\Menus\MapRakuObjectContextMenu.pas"/>
+        <DCCReference Include="Source\Shell\Menus\MapRakuTextContextMenu.pas"/>
+        <DCCReference Include="Source\Shell\Menus\MapRakuPathContextMenu.pas"/>
+        <DCCReference Include="Source\Shell\Menus\MapRakuTransformContextMenu.pas"/>
+        <DCCReference Include="Source\Shell\Menus\MapRakuArrangementContextMenu.pas"/>
+        <DCCReference Include="Source\Shell\Toolbars\MapRakuEditActionsUI.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Geometry\MapRakuStrokeStyleCombo.pas"/>
+        <DCCReference Include="Source\Shell\Toolbars\MapRakuLineToolbar.pas"/>
+        <DCCReference Include="Source\Shell\Toolbars\MapRakuLineToolbarOperations.pas"/>
+        <DCCReference Include="Source\Shell\Toolbars\MapRakuTextToolbarOperations.pas"/>
+        <DCCReference Include="Source\Shell\Toolbars\MapRakuLineStyleControls.pas"/>
+        <DCCReference Include="Source\Shell\MapRakuCanvasSettingsDialog.pas"/>
+        <DCCReference Include="Source\Shell\MapRakuCanvasColorDialog.pas"/>
+        <DCCReference Include="Source\Shell\MapRakuDarkDialogControls.pas"/>
+        <DCCReference Include="Source\Core\Geometry\MapRakuProjectiveTransform.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\Transform\MapRakuTransformInteraction.pas"/>
+        <DCCReference Include="Source\Core\Model\MapRakuDocument.pas"/>
+        <DCCReference Include="Source\Core\Model\MapRakuPaintStyles.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\Texture\MapRakuTextureInteraction.pas"/>
+        <DCCReference Include="Source\Core\Model\MapRakuTextureStyle.pas"/>
+        <DCCReference Include="Source\Core\Model\Pattern\MapRakuPatternStyle.pas"/>
+        <DCCReference Include="Source\Rendering\Paint\Pattern\MapRakuPatternRenderer.pas"/>
+        <DCCReference Include="Source\Persistence\MapRakuPatternJson.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\Pattern\MapRakuPatternControl.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\Pattern\MapRakuPatternControlRenderer.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\Pattern\MapRakuPaintStyleGesture.pas"/>
+        <DCCReference Include="Source\Rendering\Paint\MapRakuTextureRenderer.pas"/>
+        <DCCReference Include="Source\Persistence\MapRakuTextureJson.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\Texture\MapRakuTextureControl.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\MapRakuPaintModeSelector.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\MapRakuColorTargetSelector.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Color\Texture\MapRakuTextureDropTarget.pas"/>
+        <DCCReference Include="Source\Core\Commands\Text\MapRakuTextDecompositionCommands.pas"/>
+        <DCCReference Include="Source\Core\Model\MapRakuFilters.pas"/>
+        <DCCReference Include="Source\Core\Geometry\MapRakuGeometry.pas"/>
+        <DCCReference Include="Source\Core\Geometry\Shape\MapRakuEllipseGeometry.pas"/>
+        <DCCReference Include="Source\Core\Geometry\Text\MapRakuTextGeometry.pas"/>
+        <DCCReference Include="Source\Core\Geometry\Text\MapRakuTextPathGeometry.pas"/>
+        <DCCReference Include="Source\Core\Geometry\Text\MapRakuTextOutlineGeometry.pas"/>
+        <DCCReference Include="Source\Core\Geometry\Shape\MapRakuPathOperations.pas"/>
+        <DCCReference Include="Source\Core\Geometry\Shape\MapRakuShapeOperations.pas"/>
+        <DCCReference Include="Source\Core\Geometry\Shape\MapRakuShapeBooleanGeometry.pas"/>
+        <DCCReference Include="Source\Core\Geometry\Shape\MapRakuStrokeOutlineGeometry.pas"/>
+        <DCCReference Include="Source\Core\Geometry\Shape\MapRakuShapeBooleanOperations.pas"/>
+        <DCCReference Include="Source\Core\Geometry\MapRakuLayerGeometry.pas"/>
+        <DCCReference Include="Source\Rendering\MapRakuRenderer.pas"/>
+        <DCCReference Include="Source\Rendering\Cache\MapRakuCanvasRenderCache.pas"/>
+        <DCCReference Include="Source\Rendering\Paint\MapRakuPaintRenderer.pas"/>
+        <DCCReference Include="Source\Rendering\Paint\MapRakuVariableWidthRenderer.pas"/>
+        <DCCReference Include="Source\Rendering\Paint\Stroke\MapRakuStrokeSampling.pas"/>
+        <DCCReference Include="Source\Rendering\MapRakuCanvasGuides.pas"/>
+        <DCCReference Include="Source\Rendering\MapRakuCanvasPreview.pas"/>
+        <DCCReference Include="Source\Rendering\Overlay\MapRakuOverlayPrimitives.pas"/>
+        <DCCReference Include="Source\Rendering\Overlay\MapRakuOverlayShapes.pas"/>
+        <DCCReference Include="Source\Rendering\Overlay\MapRakuOverlayHandles.pas"/>
+        <DCCReference Include="Source\Rendering\Overlay\MapRakuGradientOverlay.pas"/>
+        <DCCReference Include="Source\Rendering\MapRakuTextEditOverlay.pas"/>
+        <DCCReference Include="Source\Rendering\MapRakuShapePath.pas"/>
+        <DCCReference Include="Source\Core\Model\MapRakuContext.pas"/>
+        <DCCReference Include="Source\Core\Model\MapRakuEditorState.pas"/>
+        <DCCReference Include="Source\Core\Commands\MapRakuEditCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Shape\MapRakuShapeEditCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Shape\MapRakuShapeBooleanCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Shape\MapRakuStrokeOutlineCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Text\MapRakuTextCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\MapRakuLayerStructureCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\MapRakuLayerBatchCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\Group\MapRakuGroupCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\Group\MapRakuGroupChildCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\Group\MapRakuGroupTransformCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\Transform\MapRakuLayerFlipOperations.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\Transform\MapRakuLayerArrangementOperations.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\Transform\MapRakuLayerTransformCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\MapRakuFilterCommands.pas"/>
+        <DCCReference Include="Source\Core\Commands\MapRakuPaintCommands.pas"/>
+        <DCCReference Include="Source\Core\Model\MapRakuEditHistory.pas"/>
+        <DCCReference Include="Source\Persistence\MapRakuDocumentJson.pas"/>
+        <DCCReference Include="Source\Persistence\MapRakuDocumentJsonReader.pas"/>
+        <DCCReference Include="Source\Persistence\MapRakuDocumentJsonWriter.pas"/>
+        <DCCReference Include="Source\Editor\MapRakuCanvas.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\MapRakuCanvasInteraction.pas"/>
+        <DCCReference Include="Source\Core\Geometry\MapRakuSnapGeometry.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\Text\MapRakuTextPathCharacterInteraction.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\MapRakuContextMenuInteraction.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\Filter\MapRakuFilterInteraction.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\Gradient\MapRakuGradientInteraction.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\Group\MapRakuGroupInteraction.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\Text\MapRakuTextEditing.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\MapRakuInteractionGeometry.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\Shape\MapRakuPathInteraction.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\Shape\MapRakuShapeInteraction.pas"/>
+        <DCCReference Include="Source\Editor\Creation\MapRakuShapeCreation.pas"/>
+        <DCCReference Include="Source\Editor\Creation\MapRakuLayerNaming.pas"/>
+        <DCCReference Include="Source\Editor\Creation\MapRakuImageImport.pas"/>
+        <DCCReference Include="Source\Editor\Interaction\MapRakuKeyboardMovement.pas"/>
+        <DCCReference Include="Source\Editor\MapRakuEditorWorkspaceFrame.pas">
+            <Form>EditorWorkspaceFrame</Form>
+            <DesignClass>TFrame</DesignClass>
+        </DCCReference>
+        <DCCReference Include="Source\Editor\Interaction\MapRakuSelectionGeometry.pas"/>
+        <DCCReference Include="Source\Layers\List\MapRakuLayerList.pas"/>
+        <DCCReference Include="Source\Layers\List\MapRakuLayerItemPainter.pas"/>
+        <DCCReference Include="Source\Layers\List\MapRakuLayerListStyle.pas"/>
+        <DCCReference Include="Source\Layers\List\MapRakuLayerSelection.pas"/>
+        <DCCReference Include="Source\Layers\List\MapRakuLayerThumbnailCache.pas"/>
+        <DCCReference Include="Source\Layers\Clipboard\MapRakuObjectClipboard.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\MapRakuInsertObjectsCommand.pas"/>
+        <DCCReference Include="Source\Core\Commands\Layer\MapRakuDeleteLayersCommand.pas"/>
+        <DCCReference Include="Source\Layers\List\MapRakuLayerRenderer.pas"/>
+        <DCCReference Include="Source\Layers\Operations\MapRakuLayerActions.pas"/>
+        <DCCReference Include="Source\Layers\Operations\MapRakuLayerOperations.pas"/>
+        <DCCReference Include="Source\Layers\Operations\MapRakuLayerDuplication.pas"/>
+        <DCCReference Include="Source\Layers\MapRakuLayerPanelFrame.pas">
+            <Form>LayerPanelFrame</Form>
+            <DesignClass>TFrame</DesignClass>
+        </DCCReference>
+        <DCCReference Include="Source\Layout\MapRakuDockManager.pas"/>
+        <DCCReference Include="Source\Layout\MapRakuToolFrames.pas"/>
+        <DCCReference Include="Source\ObjectProperties\MapRakuObjectPropertiesControl.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Filters\MapRakuFilterDetailsFrame.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Filters\MapRakuFilterListControl.pas"/>
+        <DCCReference Include="Source\ObjectProperties\Filters\MapRakuFilterFrame.pas"/>
+        <DCCReference Include="Source\ObjectProperties\MapRakuObjectPropertiesFrame.pas">
+            <Form>ObjectPropertiesFrame</Form>
+            <DesignClass>TFrame</DesignClass>
+        </DCCReference>
+        <DCCReference Include="Source\ToolPalette\MapRakuToolPaletteFrame.pas">
+            <Form>ToolPaletteFrame</Form>
+            <DesignClass>TFrame</DesignClass>
+        </DCCReference>
+        <DCCReference Include="Source\ToolPalette\MapRakuToolPalette.pas"/>
+        <DCCReference Include="Lib\InputMethod\WindowsImeController.pas"/>
+        <BuildConfiguration Include="Base">
+            <Key>Base</Key>
+        </BuildConfiguration>
+        <BuildConfiguration Include="Debug">
+            <Key>Cfg_1</Key>
+            <CfgParent>Base</CfgParent>
+        </BuildConfiguration>
+        <BuildConfiguration Include="Release">
+            <Key>Cfg_2</Key>
+            <CfgParent>Base</CfgParent>
+        </BuildConfiguration>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Delphi.Personality.12</Borland.Personality>
+        <Borland.ProjectType>Application</Borland.ProjectType>
+        <BorlandProject>
+            <Delphi.Personality>
+                <Source>
+                    <Source Name="MainSource">SYNC_MapRaku_Filter.dpr</Source>
+                </Source>
+            </Delphi.Personality>
+            <Platforms>
+                <Platform value="Win32">False</Platform>
+                <Platform value="Win64">True</Platform>
+            </Platforms>
+        </BorlandProject>
+        <ProjectFileVersion>12</ProjectFileVersion>
+    </ProjectExtensions>
+    <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Delphi.Targets')"/>
+    <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
+    <Import Project="$(MSBuildProjectName).deployproj" Condition="Exists('$(MSBuildProjectName).deployproj')"/>
+    <PropertyGroup Condition="'$(Config)'=='Debug' And '$(Platform)'=='Win64'">
+        <PreBuildEvent><![CDATA[if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
+        <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
+        <PreLinkEvent/>
+        <PreLinkEventIgnoreExitCode>False</PreLinkEventIgnoreExitCode>
+        <PostBuildEvent><![CDATA[copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll"&&copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll"]]></PostBuildEvent>
+        <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Release' And '$(Platform)'=='Win64'">
+        <PreBuildEvent><![CDATA[if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
+        <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
+        <PreLinkEvent/>
+        <PreLinkEventIgnoreExitCode>False</PreLinkEventIgnoreExitCode>
+        <PostBuildEvent><![CDATA[copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll"&&copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll"]]></PostBuildEvent>
+        <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
+    </PropertyGroup>
+</Project>

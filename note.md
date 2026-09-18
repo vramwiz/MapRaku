@@ -32,7 +32,9 @@
 
 ## 参照元と構成
 
-`D:\DelphiProg\test\SYNC_ScreenLayout` の `ScreenDesignMaker.dpr`／`.dproj`（単独デバッグアプリ）と `SYNC_ScreenLayout_Filter.dpr`／`.dproj`（AviUtl2プラグイン）をUI、編集、描画、保存、Undo／Redoの参考にする。参照元は変更せず、MapRakuは単独アプリとして分離を維持する。プラグイン固有のホスト連携は持ち込まない。
+`D:\DelphiProg\test\SYNC_ScreenLayout` の `ScreenDesignMaker.dpr`／`.dproj`（単独デバッグアプリ）と `SYNC_ScreenLayout_Filter.dpr`／`.dproj`（AviUtl2プラグイン）をUI、編集、描画、保存、Undo／Redoの参考にする。参照元は変更しない。2026-09-18の制作指示により、プラグインプロジェクトをコピーした `SYNC_MapRaku_Filter.dproj` を追加した。グループはSYNC、名称は地図。単独アプリとUI・地図モデル・描画・パイプを共用し、ホスト連携は `Source/PlacementPlugin` に分離する。
+
+ビルド時のAviUtl2プラグイン配置はDebug／Releaseで確認済み。IDEのF9起動と地図DLLロードを確認済み。Ctrl+Shift+F9の起動失敗はDCC_ExeOutputを `.\Win64\Plugin\$(Config)` にして解消し、ユーザーが起動を確認した。出力先にMSBuildProjectDirectoryを戻さない。ホストでの保存再読込・GPU背景・DPI・同一オブジェクト内の複数地図効果は次に確認する。現段階は疑似ホストと共通UI・パイプの検証。手順・制約は `Docs/PLUGIN.md`。Skiaの共有コールバック対策により、プラグインDLLの差替えにはホストプロセスの終了が必要。
 
 - `Source/Core/Model`：文書と基礎経路。`Source/Core/Commands/Path`：複数経路の編集履歴。
 - `Source/Map/Crossings`：交差判定と経路幾何。`Source/Map/Rendering/Crossings`：下側クリップと交差記号。

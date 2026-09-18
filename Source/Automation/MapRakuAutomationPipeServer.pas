@@ -9,7 +9,7 @@ uses
 
 function StartMapRakuAutomationPipeServer(NotifyWindow: HWND;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
-  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl; out ErrorMessage: string): Boolean;
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl; out ErrorMessage: string; Hosted: Boolean = False): Boolean;
 procedure StopMapRakuAutomationPipeServer;
 procedure ProcessMapRakuAutomationPipeMessage(WParam: WPARAM);
 // 表示時に確定したForm Handleを通知先として再設定する。
@@ -31,6 +31,7 @@ type
     FEditorState: TVectArtEditorState; // MainForm所有。
     FCanvas: TVectArtCanvasControl; // MainForm所有。背景画像の複写に使用する。
     FThread: TPipeServerTThread;
+    FPipeName: string;
     procedure Receive(Sender: TObject; const ReceivedStr: string;
       var SendStr: string);
   public
@@ -53,8 +54,9 @@ begin
   FEditHistory := EditHistory;
   FEditorState := EditorState;
   FCanvas := Canvas;
+  FPipeName := '\\.\pipe\' + AutomationPipeShortName;
   FThread := TPipeServerTThread.Create(
-    SCREEN_LAYOUT_AUTOMATION_PIPE_SHORT_NAME, PIPE_BUFFER_SIZE, True, 1,
+    AutomationPipeShortName, PIPE_BUFFER_SIZE, True, 1,
     NotifyWindow);
   FThread.OnReceive := Receive;
   FThread.Start;
@@ -70,7 +72,7 @@ begin
     FThread.ReleaseWait;
     // 接続済みクライアントが読書きを止めていても、終了待ちでUIを固めない。
     CancelSynchronousIo(FThread.Handle);
-    PipeHandle := CreateFile(PChar(SCREEN_LAYOUT_AUTOMATION_PIPE_NAME),
+    PipeHandle := CreateFile(PChar(FPipeName),
       GENERIC_READ or GENERIC_WRITE, 0, nil, OPEN_EXISTING, 0, 0);
     if PipeHandle <> INVALID_HANDLE_VALUE then
       CloseHandle(PipeHandle);
@@ -104,7 +106,8 @@ end;
 
 function StartMapRakuAutomationPipeServer(NotifyWindow: HWND;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
-  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl; out ErrorMessage: string): Boolean;
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl; out ErrorMessage: string; Hosted: Boolean): Boolean;
+var Token: TGUID;
 begin
   Result := False;
   ErrorMessage := '';
@@ -114,6 +117,16 @@ begin
     Exit;
   end;
   try
+    AutomationPipeShortName := SCREEN_LAYOUT_AUTOMATION_PIPE_SHORT_NAME;
+    AutomationHostKind := 'standalone';
+    if Hosted then
+    begin
+      // DLLと単独アプリ、再編集を別名にし、古い接続先への誤適用を防ぐ。
+      CreateGUID(Token);
+      AutomationPipeShortName := 'MapRaku.Plugin.' + IntToStr(GetCurrentProcessId) +
+        '.' + GUIDToString(Token);
+      AutomationHostKind := 'aviutl2';
+    end;
     Server := TMapRakuAutomationPipeServer.Create(NotifyWindow,
       Document, EditHistory, EditorState, Canvas);
     Result := True;

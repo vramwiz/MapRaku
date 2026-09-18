@@ -8,18 +8,24 @@ const
   SCREEN_LAYOUT_AUTOMATION_PROTOCOL = 'MapRaku';
   SCREEN_LAYOUT_AUTOMATION_VERSION = 2;
   MAX_REQUEST_CHARS = 4 * 1024 * 1024;
+var
+  AutomationPipeShortName: string = SCREEN_LAYOUT_AUTOMATION_PIPE_SHORT_NAME;
+  AutomationHostKind: string = 'standalone';
 function StateToken(const JsonText: string): string;
 procedure AddHeader(Root: TJSONObject; const Command, Status: string);
 function ErrorResponse(const Command, Code, MessageText: string): string;
 function OkResponse(const Command: string; Payload: TJSONPair): string;
 implementation
-uses System.Hash, System.SysUtils;
+uses System.Hash, System.SysUtils, Winapi.Windows;
 function StateToken(const JsonText: string): string;
 begin Result := 'sha256:' + LowerCase(THashSHA2.GetHashString(JsonText)); end;
 procedure AddHeader(Root: TJSONObject; const Command, Status: string);
 begin
   Root.AddPair('protocol', SCREEN_LAYOUT_AUTOMATION_PROTOCOL);
   Root.AddPair('protocol_version', TJSONNumber.Create(SCREEN_LAYOUT_AUTOMATION_VERSION));
+  Root.AddPair('pipe_name', AutomationPipeShortName);
+  Root.AddPair('host_kind', AutomationHostKind);
+  Root.AddPair('process_id', TJSONNumber.Create(GetCurrentProcessId));
   Root.AddPair('command', Command);
   Root.AddPair('status', Status);
 end;

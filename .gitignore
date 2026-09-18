@@ -1,6 +1,9 @@
 Win64/
 Win32/
 TestOutput/
+MapRakuPluginTests.dproj
+MapRakuPluginTests.res
+SYNC_MapRaku_Filter.res
 __history/
 __recovery/
 *.dcu

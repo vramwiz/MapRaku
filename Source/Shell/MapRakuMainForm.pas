@@ -76,6 +76,7 @@ type
     FShortcuts: TShortcutAction;
     FViewMenu: TVectArtDarkPopupMenu;
     FLayoutEditing: Boolean;
+    FHosted: Boolean; // ホストへの適用は外側の編集セッションが担当する。
     FAutomationPipeStarted: Boolean; // このFormが専用Pipeを所有している間だけTrue。
     FLayoutFileName: string;
     FMenuGroup: TVectArtDarkMenuGroup;
@@ -133,14 +134,17 @@ type
     // 外部ホストによる文書初期化後、表示直前の使用色を取り込む。
     procedure DoShow; override;
   public
-    // 単独アプリだけがJSONの読込・保存メニューを生成するための初期化口。
+    // FormCreateより前にホスト用の終了規則・パイプ・レイアウト保存先を選ぶ。
+    constructor CreateHosted(AOwner: TComponent);
     function CloseQuery: Boolean; override;
+    // 単独アプリだけがJSONの読込・保存メニューを生成する。
     procedure EnableStandaloneFileActions;
     // 外部ホストが編集メニュー内のキャンバス設定項目を表示するか切り替える。
     procedure SetCanvasSettingsVisible(const Value: Boolean);
     // ウィンドウへドロップされた画像ファイルの配置を有効化する。
     procedure SetFileDropCaptionEnabled(const Value: Boolean);
-    // プラグインホストが編集中だけ表示する参照背景を設定する。
+    procedure SetHostBackgroundRgba(const Pixels: TBytes; Width, Height: Integer);
+    // AIや外部連携が編集中だけ表示する元画像を設定する。
     procedure SetReferenceBackgroundRgba(const Pixels: TBytes;
       Width, Height: Integer);
     // プラグインなど外部ホストが、同じ編集UIへDocumentを受け渡すための接続口。
@@ -335,7 +339,10 @@ begin
   FLayerMenuItem := CreateViewMenuItem('Layers');
 
   LayoutFolder := TPath.Combine(TPath.GetDocumentsPath, 'MapRaku');
-  FLayoutFileName := TPath.Combine(LayoutFolder, 'MainForm.ini');
+  if FHosted then
+    FLayoutFileName := TPath.Combine(LayoutFolder, 'PluginForm.ini')
+  else
+    FLayoutFileName := TPath.Combine(LayoutFolder, 'MainForm.ini');
   try
     TDirectory.CreateDirectory(LayoutFolder);
   except
@@ -363,9 +370,13 @@ begin
   HistoryChanged(FEditHistory);
   EditorStateChanged(FEditorState);
   FAutomationPipeStarted := StartMapRakuAutomationPipeServer(Handle,
-    FDocument, FEditHistory, FEditorState, FEditorFrame.CanvasControl, ErrorMessage);
+    FDocument, FEditHistory, FEditorState, FEditorFrame.CanvasControl, ErrorMessage, FHosted);
   if not FAutomationPipeStarted then
+  begin
     lblStatus.Caption := 'Codex pipe: ' + ErrorMessage;
+    // 二重に開いた編集画面を既存セッションの接続先と誤認させない。
+    if FHosted then raise EInvalidOp.Create(ErrorMessage);
+  end;
 end;
 
 procedure TMainForm.CanvasSettingsRequest(Sender: TObject);
@@ -507,8 +518,16 @@ begin
     mrYes: begin SaveDocument; Result := FDocument.Revision = FSavedRevision; end;
   end;
 end;
+constructor TMainForm.CreateHosted(AOwner: TComponent);
+begin
+  FHosted := True;
+  inherited Create(AOwner);
+end;
+
 function TMainForm.CloseQuery: Boolean;
 begin
+  // ×と取消は保存確認を出さず、適用だけをホストへ確定する。
+  if FHosted then Exit(inherited CloseQuery);
   {$IFDEF DEBUG}
   // 自動テストと反復起動を保存確認で停止させない。Releaseでは変更保護を維持する。
   Result := inherited CloseQuery;
@@ -638,6 +657,13 @@ procedure TMainForm.WMRecentMenuRefresh(var Message: TMessage);
 begin
   RebuildRecentMenu;
   Message.Result := 0;
+end;
+
+procedure TMainForm.SetHostBackgroundRgba(const Pixels: TBytes;
+  Width, Height: Integer);
+begin
+  if (FEditorFrame <> nil) and (FEditorFrame.CanvasControl <> nil) then
+    FEditorFrame.CanvasControl.SetHostBackgroundRgba(Pixels, Width, Height);
 end;
 
 procedure TMainForm.SetReferenceBackgroundRgba(const Pixels: TBytes;

@@ -1,4 +1,4 @@
-﻿// AviUtl2へ「画面レイアウト」を登録し、編集ボタンとシリアライズ文字列項目だけを公開する。
+﻿// AviUtl2へ「地図」を登録し、編集ボタンとシリアライズ文字列項目だけを公開する。
 unit MapRakuFilterPlugin;
 
 interface
@@ -8,9 +8,9 @@ uses
 
 // AviUtl2へ渡すフィルターテーブルを返す。
 function GetMapRakuFilterTable: PFILTER_PLUGIN_TABLE;
-// 将来の共通UI初期化に備えたDLL初期化境界。現段階では状態を持たない。
+// 描画ランタイムとオブジェクト別の描画状態を確保する。
 procedure InitializeMapRakuFilter;
-// 将来の共通UI解放に備えたDLL終了境界。現段階では状態を持たない。
+// コールバック終了後に描画状態とランタイムを解放する。
 procedure FinalizeMapRakuFilter;
 
 implementation
@@ -18,11 +18,16 @@ implementation
 uses
   PluginFilterTable, MapRakuEditorHost, MapRakuFilterContext,
   System.UITypes, TextRendererSkiaBootstrap, TextRendererSkiaRuntime,
-  Vcl.Dialogs;
+  Vcl.Dialogs, Winapi.Windows;
 
 const
-  FILTER_EFFECT_NAME = '画面レイアウト';
-  LAYOUT_DATA_ITEM_NAME = '配置データ';
+  FILTER_EFFECT_NAME = '地図';
+  LAYOUT_DATA_ITEM_NAME = '地図データ';
+  GET_MODULE_HANDLE_EX_FLAG_PIN = $00000001;
+  GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS = $00000004;
+
+function GetModuleHandleExW(Flags: DWORD; ModuleName: PWideChar;
+  out Module: HMODULE): BOOL; stdcall; external kernel32 name 'GetModuleHandleExW';
 
 var
   EditButton: TFILTER_ITEM_BUTTON;
@@ -92,13 +97,16 @@ begin
     if not EditMapRaku(CurrentData, BackgroundPixels,
       BackgroundWidth, BackgroundHeight, CanvasWidth, CanvasHeight,
       UpdatedData, ErrorMessage) then
-      raise EInvalidOp.Create('画面レイアウトを編集できませんでした。'#13#10 +
-        ErrorMessage);
+    begin
+      if ErrorMessage <> '' then
+        raise EInvalidOp.Create('地図を編集できませんでした。'#13#10 + ErrorMessage);
+      Exit;
+    end;
 
     Utf8Data := UTF8String(UpdatedData);
     if not Edit^.SetObjectItemValue(Obj, FILTER_EFFECT_NAME,
       LAYOUT_DATA_ITEM_NAME, PAnsiChar(Utf8Data)) then
-      raise EInvalidOp.Create('配置データをAviUtl2へ保存できませんでした。');
+      raise EInvalidOp.Create('地図データをAviUtl2へ保存できませんでした。');
   except
     on E: Exception do
       MessageDlg(E.Message, mtError, [mbOK], 0);
@@ -122,9 +130,7 @@ begin
       Context := MapRakuContexts.GetContext(Video);
       if Context <> nil then
       begin
-        Context.UpdateSerializedData(SerializedData);
-        Context.CaptureBackground(Video);
-        Context.RenderVideo(Video);
+        Context.ProcessVideo(Video, SerializedData);
       end;
     end;
   except
@@ -133,7 +139,14 @@ begin
 end;
 
 procedure InitializeMapRakuFilter;
+var Module: HMODULE;
 begin
+  // Skiaのストリームコールバックは共有DLL内に残る。コードだけはプロセス終了まで
+  // 保持し、他のSkia利用者が解放済みのDelphi関数を呼ぶ実行違反を防ぐ。
+  // 文書・画像・描画状態はUninitializePluginで通常どおり解放する。
+  if IsLibrary and not GetModuleHandleExW(
+    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS or GET_MODULE_HANDLE_EX_FLAG_PIN,
+    PChar(@InitializeMapRakuFilter), Module) then RaiseLastOSError;
   if not MapRakuSkiaAcquired then
   begin
     TTextRendererSkiaRuntime.Acquire(BundledSkiaRuntimeFileName);
@@ -171,7 +184,7 @@ begin
     SetupPluginTable(FILTER_FLAG_VIDEO or FILTER_FLAG_FILTER,
       FILTER_EFFECT_NAME,
       'SYNC',
-      '文字や線を配置する画面レイアウトフィルター',
+      '道路・線路・施設を配置する地図フィルター',
       PassThroughVideo,
       nil);
   end;

@@ -6,6 +6,10 @@ AIとの指示・文書・元画像・描画結果の交換はすべてパイプ
 
 ## 生成の前提
 
+プラグインでは編集画面ごとの `MapRaku.Plugin.<PID>.{GUID}` へ接続する。`Get-MapRakuEndpoints` で列挙し、画面下部と一致する名前を `Set-MapRakuEndpoint` へ渡す。応答には `pipe_name`、`host_kind`（`standalone`／`aviutl2`）、`process_id` が付く。プラグインの「適用／取消」までの扱いは [PLUGIN.md](PLUGIN.md) を参照。
+
+画像応答の `snapshot.background_kind` は `reference`（AIの元画像）、`host`（ホスト映像）、`none`（補助画像なし）。ホスト映像は元画像条件として登録されず、`get_reference_image` の対象にもならない。`include_reference:false` は両方の補助画像を除いた完成図を返す。
+
 - 作成前に範囲と方角を決める。入力PNGは回転・切出し済みとし、キャンバスと同じ縦横比にする。アプリは画像を自動回転しない。
 - `north_clockwise_degrees` は画面の上を0度とする北方向の時計回り角度。AIはこれと元画像を基準に生成する。
 - 道路・線路の形状、接続、交差を優先し、主要施設は簡単な建物・名称で表す。細部は人が調整する。

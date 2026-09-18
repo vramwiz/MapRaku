@@ -78,7 +78,11 @@ begin
   for Context in Self do
     if (Context.Layer = ALayer) and (Context.FrameS = AFrameS) and
       (Context.FrameE = AFrameE) then
-      Exit(Context);
+    begin
+      // 編集APIの位置情報だけで一意に決まらない場合、別効果の背景を返さない。
+      if Result <> nil then Exit(nil);
+      Result := Context;
+    end;
 end;
 
 function TPluginFilterContextList<T>.TryGetObjectID(Video: PFILTER_PROC_VIDEO;

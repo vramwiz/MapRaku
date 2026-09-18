@@ -1,4 +1,4 @@
-﻿// 画面レイアウトのシリアライズ値と解析済みDocumentをAviUtl2オブジェクト単位で保持する。
+﻿// 地図のシリアライズ値と解析済みDocumentをAviUtl2オブジェクト単位で保持する。
 unit MapRakuFilterContext;
 
 interface
@@ -21,9 +21,11 @@ type
     FOverlayBuffer: TVectArtRenderBuffer;
     FRenderedRevision: Int64;
     FSerializedData: string;
+    FRenderLock: TRTLCriticalSection;
   public
     constructor Create;
     destructor Destroy; override;
+    procedure ProcessVideo(Video: PFILTER_PROC_VIDEO; const Value: string);
     // 対象オブジェクト評価時のAviUtl2合成済み背景を更新する。
     procedure CaptureBackground(Video: PFILTER_PROC_VIDEO);
     // 設定画面が使用する最新背景を呼び出し側所有の配列で返す。
@@ -45,12 +47,13 @@ type
 implementation
 
 uses
-  MapRakuDocumentJson;
+  MapRakuDocumentJson, MapRakuPluginRender;
 
 constructor TMapRakuFilterContext.Create;
 begin
   inherited Create;
   InitializeCriticalSection(FOutputSizeLock);
+  InitializeCriticalSection(FRenderLock);
   FDocument := TVectArtDocument.Create;
   FFrameCapture := TMapRakuFrameCapture.Create;
   FOutputBuffer := TVectArtRenderBuffer.Create;
@@ -61,11 +64,26 @@ end;
 destructor TMapRakuFilterContext.Destroy;
 begin
   DeleteCriticalSection(FOutputSizeLock);
+  DeleteCriticalSection(FRenderLock);
   FOverlayBuffer.Free;
   FOutputBuffer.Free;
   FFrameCapture.Free;
   FDocument.Free;
   inherited Destroy;
+end;
+
+procedure TMapRakuFilterContext.ProcessVideo(Video: PFILTER_PROC_VIDEO;
+  const Value: string);
+begin
+  // 同じ効果の並列評価で文書の差替えと描画バッファの書込みを交差させない。
+  EnterCriticalSection(FRenderLock);
+  try
+    UpdateSerializedData(Value);
+    CaptureBackground(Video);
+    RenderVideo(Video);
+  finally
+    LeaveCriticalSection(FRenderLock);
+  end;
 end;
 
 function TMapRakuFilterContext.RenderVideo(
@@ -100,10 +118,12 @@ begin
     LeaveCriticalSection(FOutputSizeLock);
   end;
 
+  // 未設定では入力映像を維持する。取消しただけで白い地図を出さない。
+  if FSerializedData = '' then Exit(True);
   if (FRenderedRevision <> FDocument.Revision) or
     (FOverlayBuffer.Width <> Width) or (FOverlayBuffer.Height <> Height) then
   begin
-    RenderVectArtDocument(FDocument, FOverlayBuffer, Width, Height);
+    RenderMapRakuPlugin(FDocument, FOverlayBuffer, Width, Height);
     FRenderedRevision := FDocument.Revision;
   end;
   FOutputBuffer.SetSize(Width, Height);

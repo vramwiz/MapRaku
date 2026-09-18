@@ -301,11 +301,19 @@ begin
       if not TryDeserializeVectArtDocument(JsonText, Target, ErrorMessage) then
         Exit(ErrorResponse(Command, 'invalid_document', ErrorMessage));
     end;
-    if Bool(Root,'include_reference',True) then Canvas.CopyReferenceBackground(Background);
+    if Bool(Root,'include_reference',True) then
+    begin
+      Canvas.CopyDisplayBackground(Background);
+      Snapshot.AddPair('background_kind', Canvas.DisplayBackgroundKind);
+    end
+    else Snapshot.AddPair('background_kind', 'none');
     if Preview then
       Images := BuildMapRakuAutomationImages(Target, Background, MaxEdge)
     else
       Images := BuildMapRakuAutomationImages(Document, Background, MaxEdge);
+    Images.RemovePair('has_reference_background').Free;
+    Images.AddPair('has_reference_background', TJSONBool.Create(
+      Bool(Root,'include_reference',True) and (Canvas.DisplayBackgroundKind = 'reference')));
     Snapshot.AddPair('images', Images);
     Snapshot.AddPair('document', TJSONObject.ParseJSONValue(JsonText));
     Snapshot.AddPair('candidate_state_token', StateToken(JsonText));
