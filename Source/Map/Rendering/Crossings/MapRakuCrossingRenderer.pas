@@ -2,7 +2,7 @@
 unit MapRakuCrossingRenderer;
 
 interface
-uses System.Skia, System.Types, System.UITypes, MapRakuDocument, MapRakuCrossings, MapRakuBridgeSpans;
+uses System.Skia, System.Types, System.UITypes, MapRakuDocument, MapRakuCrossings, MapRakuBridgeSpans, MapRakuRenderBuffer;
 
 type
   // Cutは下側に残す領域、Marksは上側に描く記号。対象IDを分けて無関係な層を保護する。
@@ -33,6 +33,9 @@ type
     property CanvasSettings: TVectArtCanvasLayer read FCanvasSettings;
     // 呼び出し元のSave/Restore内で、対象レイヤーだけにクリップを適用する。
     procedure ClipLower(const Canvas: ISkCanvas; Layer: TVectArtLayer);
+    // 動的描画も道路と同じクリップを使う。白のアルファが描画可能な割合。
+    procedure RenderLowerMask(Target: TVectArtRenderBuffer;
+      Layer: TVectArtLayer; Width, Height: Integer; const Bounds: TRectF);
     // 上側本体と同じ不透明度で、統合済みの側線を一度だけ描く。
     procedure DrawMarks(const Canvas: ISkCanvas; Layer: TVectArtLayer;
       Opacity: Single);
@@ -247,6 +250,23 @@ begin
       // SVGCanvasはDifferenceクリップを反転せず出力するため、先に
       // ベクターの差分を求め、残す領域を通常のIntersectで指定する。
       Canvas.ClipPath(V.Cut,TSkClipOp.Intersect,True);
+end;
+
+procedure TMapCrossingRenderContext.RenderLowerMask(Target: TVectArtRenderBuffer;
+  Layer: TVectArtLayer; Width, Height: Integer; const Bounds: TRectF);
+var Surface: ISkSurface; Canvas: ISkCanvas; Paint: ISkPaint;
+begin
+  Target.SetSize(Width,Height);
+  Target.Clear;
+  Surface:=TSkSurface.MakeRasterDirect(TSkImageInfo.Create(Width,Height,
+    TSkColorType.RGBA8888,TSkAlphaType.Unpremul),Target.Data,Target.Stride);
+  Canvas:=Surface.Canvas;
+  Canvas.Scale(Width/Bounds.Width,Height/Bounds.Height);
+  Canvas.Translate(-Bounds.Left,-Bounds.Top);
+  ClipLower(Canvas,Layer);
+  Paint:=TSkPaint.Create;
+  Paint.Color:=TAlphaColorRec.White;
+  Canvas.DrawPaint(Paint);
 end;
 
 procedure TMapCrossingRenderContext.DrawMarks(const Canvas: ISkCanvas;

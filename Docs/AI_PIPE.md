@@ -6,7 +6,7 @@ AIとの指示・文書・元画像・描画結果の交換はすべてパイプ
 
 ## 生成の前提
 
-プラグインでは編集画面ごとの `MapRaku.Plugin.<PID>.{GUID}` へ接続する。`Get-MapRakuEndpoints` で列挙し、画面下部と一致する名前を `Set-MapRakuEndpoint` へ渡す。応答には `pipe_name`、`host_kind`（`standalone`／`aviutl2`）、`process_id` が付く。プラグインの「適用／取消」までの扱いは [PLUGIN.md](PLUGIN.md) を参照。
+プラグインでは編集画面ごとの `MapRaku.Plugin.<PID>.{GUID}` へ接続する。`Get-MapRakuEndpoints` で列挙し、対象プロセスの名前を `Set-MapRakuEndpoint` へ渡し、応答の `process_id` と `host_kind` で接続先を確認する。画面下部への接続先表示は廃止した。応答には `pipe_name`、`host_kind`（`standalone`／`aviutl2`）、`process_id` が付く。編集画面を閉じた際のプラグインへの確定については [PLUGIN.md](PLUGIN.md) を参照。
 
 画像応答の `snapshot.background_kind` は `reference`（AIの元画像）、`host`（ホスト映像）、`none`（補助画像なし）。ホスト映像は元画像条件として登録されず、`get_reference_image` の対象にもならない。`include_reference:false` は両方の補助画像を除いた完成図を返す。
 

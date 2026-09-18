@@ -1657,33 +1657,34 @@ begin
 end;
 
 procedure TVectArtCanvasControl.DrawRoutePreview(ACanvas: TCanvas);
-var Position,Tangent:TPointF; Path:TVectArtPathLayer; Marker:TRect;
-  Triangle: array[0..2] of TPoint;
+var Position,Tangent:TPointF; Path:TVectArtPathLayer; Bitmap:TBitmap;
+  Bounds:TRect;
 begin
   if not FRoutePreviewActive or not TryMapRakuRoutePosition(FRoutePreviewData,
     FRoutePreviewProgress,Position,Tangent,Path) then Exit;
-  Marker:=Rect(ToScreenX(Position.X)-8,ToScreenY(Position.Y)-18,
-    ToScreenX(Position.X)+9,ToScreenY(Position.Y)-1);
-  Triangle[0]:=Point(ToScreenX(Position.X)-9,ToScreenY(Position.Y)-7);
-  Triangle[1]:=Point(ToScreenX(Position.X)+9,ToScreenY(Position.Y)-7);
-  Triangle[2]:=Point(ToScreenX(Position.X),ToScreenY(Position.Y)+10);
-  DrawOverlayHandlePolygon(ACanvas,Triangle,$00FF8000,clBlack,2,1);
-  DrawOverlayHandleEllipse(ACanvas,Marker,$00FF8000,clBlack);
+  Bitmap:=TBitmap.Create;
+  try
+    RenderRoutePreviewBitmap(FDocument,Path,Position,FZoom,Bitmap);
+    Bounds:=Rect(ToScreenX(Position.X)-20,ToScreenY(Position.Y)-24,
+      ToScreenX(Position.X)+20,ToScreenY(Position.Y)+16);
+    DrawPremultipliedBitmap(ACanvas,Bounds,Bitmap);
+  finally Bitmap.Free; end;
 end;
 
 procedure TVectArtCanvasControl.DrawRoutePreview(ACanvas: TDirect2DCanvas);
-var Position,Tangent:TPointF; Path:TVectArtPathLayer; Marker:TRect;
-  Triangle: array[0..2] of TPoint;
+var Position,Tangent:TPointF; Path:TVectArtPathLayer; Bitmap:TBitmap;
+  Image:ID2D1Bitmap; Bounds:TD2D1RectF;
 begin
   if not FRoutePreviewActive or not TryMapRakuRoutePosition(FRoutePreviewData,
     FRoutePreviewProgress,Position,Tangent,Path) then Exit;
-  Marker:=Rect(ToScreenX(Position.X)-8,ToScreenY(Position.Y)-18,
-    ToScreenX(Position.X)+9,ToScreenY(Position.Y)-1);
-  Triangle[0]:=Point(ToScreenX(Position.X)-9,ToScreenY(Position.Y)-7);
-  Triangle[1]:=Point(ToScreenX(Position.X)+9,ToScreenY(Position.Y)-7);
-  Triangle[2]:=Point(ToScreenX(Position.X),ToScreenY(Position.Y)+10);
-  DrawOverlayHandlePolygon(ACanvas,Triangle,$00FF8000,clBlack,2,1);
-  DrawOverlayHandleEllipse(ACanvas,Marker,$00FF8000,clBlack);
+  Bitmap:=TBitmap.Create;
+  try
+    RenderRoutePreviewBitmap(FDocument,Path,Position,FZoom,Bitmap);
+    Image:=ACanvas.CreateBitmap(Bitmap);
+    Bounds:=D2D1RectF(ToScreenX(Position.X)-20,ToScreenY(Position.Y)-24,
+      ToScreenX(Position.X)+20,ToScreenY(Position.Y)+16);
+    ACanvas.RenderTarget.DrawBitmap(Image,@Bounds);
+  finally Bitmap.Free; end;
 end;
 
 procedure TVectArtCanvasControl.EndPan;

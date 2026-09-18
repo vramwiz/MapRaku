@@ -6,6 +6,10 @@ interface
 uses
   System.Types, Vcl.Direct2D, Vcl.Graphics, MapRakuDocument;
 
+// 画面上で一定サイズの移動ピンにも、経路と同じ高架下クリップを適用する。
+procedure RenderRoutePreviewBitmap(Document: TVectArtDocument;
+  Path: TVectArtPathLayer; const Position: TPointF; Zoom: Single;
+  Bitmap: TBitmap);
 // 頂点種別を示す鋭角またはベジェ形状のアイコン座標を返す。
 function BuildVertexKindIconPoints(const Bounds: TRect;
   Kind: TMapRakuVertexKind): TArray<TPoint>;
@@ -46,9 +50,70 @@ procedure DrawVariableWidthPreview(Target: TDirect2DCanvas;
 implementation
 
 uses
+  System.Skia, MapRakuCrossingRenderer,
   System.Math, System.UITypes, Winapi.D2D1, MapRakuOverlayHandles,
   MapRakuOverlayPrimitives, MapRakuOverlayShapes,
   MapRakuRenderer;
+
+procedure RenderRoutePreviewBitmap(Document: TVectArtDocument;
+  Path: TVectArtPathLayer; const Position: TPointF; Zoom: Single;
+  Bitmap: TBitmap);
+var Buffer: TVectArtRenderBuffer; Crossings: TMapCrossingRenderContext;
+  Surface: ISkSurface; Canvas: ISkCanvas; Paint: ISkPaint;
+  Builder: ISkPathBuilder; Pin: ISkPath; X,Y: Integer;
+  Source: PVectArtRgbaPixel; Destination: PByte;
+begin
+  Buffer:=TVectArtRenderBuffer.Create;
+  Crossings:=TMapCrossingRenderContext.Create(Document);
+  try
+    Buffer.SetSize(40,40);
+    Buffer.Clear;
+    Surface:=TSkSurface.MakeRasterDirect(TSkImageInfo.Create(40,40,
+      TSkColorType.RGBA8888,TSkAlphaType.Unpremul),Buffer.Data,Buffer.Stride);
+    Canvas:=Surface.Canvas;
+    Canvas.Save;
+    Canvas.Translate(20,24);
+    Canvas.Scale(Zoom,Zoom);
+    Canvas.Translate(-Position.X,-Position.Y);
+    Crossings.ClipLower(Canvas,Path);
+    // クリップだけ文書座標で確定し、ピンの大きさはズームに依存させない。
+    Canvas.ResetMatrix;
+    Builder:=TSkPathBuilder.Create;
+    Builder.MoveTo(11,17); Builder.LineTo(29,17);
+    Builder.LineTo(20,34); Builder.Close;
+    Pin:=Builder.Detach;
+    Paint:=TSkPaint.Create;
+    Paint.AntiAlias:=True;
+    Paint.Color:=$FF0080FF;
+    Canvas.DrawPath(Pin,Paint);
+    Paint.Style:=TSkPaintStyle.Stroke;
+    Paint.StrokeWidth:=2; Paint.Color:=TAlphaColorRec.Black;
+    Canvas.DrawPath(Pin,Paint);
+    Paint.Style:=TSkPaintStyle.Fill; Paint.Color:=$FF0080FF;
+    Canvas.DrawOval(TRectF.Create(12,6,29,23),Paint);
+    Paint.Style:=TSkPaintStyle.Stroke; Paint.Color:=TAlphaColorRec.Black;
+    Canvas.DrawOval(TRectF.Create(12,6,29,23),Paint);
+    Canvas.Restore;
+    Bitmap.PixelFormat:=pf32bit;
+    Bitmap.SetSize(40,40);
+    Bitmap.AlphaFormat:=afPremultiplied;
+    for Y:=0 to 39 do begin
+      Source:=Buffer.Data; Inc(Source,Y*40);
+      Destination:=Bitmap.ScanLine[Y];
+      for X:=0 to 39 do begin
+        Destination[0]:=(Integer(Source^.B)*Source^.A+127) div 255;
+        Destination[1]:=(Integer(Source^.G)*Source^.A+127) div 255;
+        Destination[2]:=(Integer(Source^.R)*Source^.A+127) div 255;
+        Destination[3]:=Source^.A;
+        Inc(Source); Inc(Destination,4);
+      end;
+    end;
+  finally
+    Surface:=nil;
+    Crossings.Free;
+    Buffer.Free;
+  end;
+end;
 
 type
   TPreviewLineSegment = record

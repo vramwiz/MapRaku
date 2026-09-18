@@ -35,7 +35,7 @@ function GetModuleHandleExW(Flags: DWORD; ModuleName: PWideChar;
 
 var
   EditButton: TFILTER_ITEM_BUTTON;
-  ProgressItem, MarkerScaleItem, MarkerOpacityItem, MarkerOffsetXItem,
+  ProgressItem, MarkerScaleItem, MarkerTransparencyItem, MarkerUnderpassTransparencyItem, MarkerOffsetXItem,
     MarkerOffsetYItem, RotationCorrectionItem, DisplayWidthItem,
     DisplayHeightItem, ScrollStartItem, AnimationAmountItem,
     AnimationSpeedItem, AnimationAuxItem, PointerSizeItem: TFILTER_ITEM_TRACK;
@@ -156,7 +156,8 @@ begin
       begin
         Motion.ProgressPercent := ProgressItem.Value;
         Motion.MarkerColor := GetColor(MarkerColorItem);
-        Motion.MarkerOpacity := MarkerOpacityItem.Value;
+        Motion.MarkerTransparency := MarkerTransparencyItem.Value;
+        Motion.MarkerUnderpassTransparency := MarkerUnderpassTransparencyItem.Value;
         Motion.MarkerScale := MarkerScaleItem.Value;
         Motion.MarkerOffsetX := MarkerOffsetXItem.Value;
         Motion.MarkerOffsetY := MarkerOffsetYItem.Value;
@@ -251,7 +252,8 @@ begin
     AddSelectList(MarkerImageAnchorList, '下中央', 1);
     AddSelect(MarkerImageAnchorItem, 'マーカー画像の基準点', 0,
       @MarkerImageAnchorList[0]);
-    AddTrack(MarkerOpacityItem, 'マーカー透明度', 100, 0, 100, 1);
+    AddTrack(MarkerTransparencyItem, 'マーカー透明度', 0, 0, 100, 1);
+    AddTrack(MarkerUnderpassTransparencyItem, 'マーカー透明度（道路の下）', 100, 0, 100, 1);
     AddTrack(MarkerOffsetXItem, 'マーカーオフセットX', 0, -4096, 4096, 1);
     AddTrack(MarkerOffsetYItem, 'マーカーオフセットY', 0, -4096, 4096, 1);
     AddSelectList(MarkerRotationList, '固定', 0);

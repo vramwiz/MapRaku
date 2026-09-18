@@ -6,7 +6,7 @@ interface
 uses
   AviUtl2FilterTypes, PluginFilterContextManager, MapRakuFrameCapture,
   System.SysUtils, System.Types, System.Math, System.Generics.Collections, Winapi.Windows, MapRakuDocument, MapRakuRenderer,
-  MapRakuPluginRouteMarker;
+  MapRakuPluginRouteMarker, MapRakuCrossingRenderer;
 
 type
   TMapRakuFilterContext = class(TPluginFilterContextItem)
@@ -21,6 +21,7 @@ type
     FMarkerBuffer: TVectArtRenderBuffer;
     FMarkerImage: TVectArtRenderBuffer;
     FMarkerImageFileName: string;
+    FRouteClipMasks: TObjectList<TVectArtRenderBuffer>;
     FStaticLayerBuffers: TObjectList<TVectArtRenderBuffer>;
     FStaticRouteLayerIndices: TList<Integer>;
     FStaticMapBuffer: TVectArtRenderBuffer;
@@ -102,6 +103,7 @@ begin
   FMapLayerBuffer := TVectArtRenderBuffer.Create;
   FMarkerBuffer := TVectArtRenderBuffer.Create;
   FMarkerImage := TVectArtRenderBuffer.Create;
+  FRouteClipMasks := TObjectList<TVectArtRenderBuffer>.Create(True);
   FStaticLayerBuffers := TObjectList<TVectArtRenderBuffer>.Create(True);
   FStaticRouteLayerIndices := TList<Integer>.Create;
   FStaticMapBuffer := TVectArtRenderBuffer.Create;
@@ -120,6 +122,7 @@ begin
   FMarkerBuffer.Free;
   FMarkerImage.Free;
   FStaticMapBuffer.Free;
+  FRouteClipMasks.Free;
   FStaticLayerBuffers.Free;
   FStaticRouteLayerIndices.Free;
   FViewportBuffer.Free;
@@ -159,12 +162,14 @@ end;
 procedure TMapRakuFilterContext.UpdateStaticMapCache(Width, Height: Integer;
   HasRoute: Boolean);
 var I, FirstLayerIndex: Integer; Layer: TVectArtRenderBuffer;
+  Crossings: TMapCrossingRenderContext;
 begin
   // 進行位置以外の地図は再生中に変化しない。ルート前後の範囲を平坦化して、
   // 動的な軌跡だけを正しいレイヤー順へ差し込めるようにする。
   if (FStaticCacheRevision=FDocument.Revision) and
      (FStaticCacheWidth=Width) and (FStaticCacheHeight=Height) and
      (FStaticCacheHasRoute=HasRoute) and (FStaticCacheData=FSerializedData) then Exit;
+  FRouteClipMasks.Clear;
   FStaticLayerBuffers.Clear;
   FStaticRouteLayerIndices.Clear;
   if not HasRoute then
@@ -174,6 +179,18 @@ begin
       if (FDocument[I] is TVectArtPathLayer) and
          (TVectArtPathLayer(FDocument[I]).MapElement='route') then
         FStaticRouteLayerIndices.Add(I);
+    // 非表示化する前のルートで交差を解決し、進行位置だけの変化では再計算しない。
+    Crossings:=TMapCrossingRenderContext.Create(FDocument);
+    try
+      for I:=0 to FStaticRouteLayerIndices.Count-1 do begin
+        Layer:=TVectArtRenderBuffer.Create;
+        FRouteClipMasks.Add(Layer);
+        Crossings.RenderLowerMask(Layer,FDocument[FStaticRouteLayerIndices[I]],
+          Width,Height,TRectF.Create(-FDocument.CanvasLayer.Width*0.5,
+          -FDocument.CanvasLayer.Height*0.5,FDocument.CanvasLayer.Width*0.5,
+          FDocument.CanvasLayer.Height*0.5));
+      end;
+    finally Crossings.Free; end;
     FirstLayerIndex:=1;
     for I:=0 to FStaticRouteLayerIndices.Count do begin
       Layer:=TVectArtRenderBuffer.Create;
@@ -276,17 +293,18 @@ begin
     for I:=0 to FStaticRouteLayerIndices.Count-1 do begin
       FRouteOverlayBuffer.SetSize(Width,Height); FRouteOverlayBuffer.Clear;
       DrawMapRakuPluginRouteLayer(FDocument,FRouteOverlayBuffer,TrailMotion,
-        FStaticRouteLayerIndices[I],FMarkerImage);
+        FStaticRouteLayerIndices[I],FMarkerImage,FRouteClipMasks[I]);
       CompositeVectArtRgba(FRouteOverlayBuffer,FOverlayBuffer.Data,Width,Height);
       CompositeVectArtRgba(FStaticLayerBuffers[I+1],FOverlayBuffer.Data,Width,Height);
     end;
     // 頂点で隣接区間の軌跡に覆われないよう、マーカーだけを最後に重ねる。
-    // 高さ順の遮蔽は静的範囲の描画時に既に確定している。
+    // 共通クリップの内外へ通常／道路の下の透明度を適用済み。
+    // 道路の下を表示する設定も、上側道路の上塗りで失わない。
     FMarkerBuffer.SetSize(Width,Height); FMarkerBuffer.Clear;
     MarkerMotion:=Motion; MarkerMotion.RouteDisplay:=0; MarkerMotion.DrawMarker:=True;
     for I:=0 to FStaticRouteLayerIndices.Count-1 do
       DrawMapRakuPluginRouteLayer(FDocument,FMarkerBuffer,MarkerMotion,
-        FStaticRouteLayerIndices[I],FMarkerImage);
+        FStaticRouteLayerIndices[I],FMarkerImage,FRouteClipMasks[I]);
     CompositeVectArtRgba(FMarkerBuffer,FOverlayBuffer.Data,Width,Height);
   end;
   MapWatch.Stop;
