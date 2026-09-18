@@ -148,7 +148,7 @@ begin
     0: begin AddPreset(0,U([$76F4,$7DDA])); AddPreset(1,U([$92ED,$89D2,$9023,$7D9A])); AddPreset(2,U([$30D9,$30B8,$30A7,$9023,$7D9A])); end;
     1: begin AddPreset(10,'JR '+U([$76F4,$7DDA])); AddPreset(11,'JR '+U([$92ED,$89D2])); AddPreset(12,'JR '+U([$30D9,$30B8,$30A7]));
       AddPreset(13,U([$79C1,$9244,$76F4,$7DDA])); AddPreset(14,U([$79C1,$9244,$92ED,$89D2])); AddPreset(15,U([$79C1,$9244,$30D9,$30B8,$30A7])); end;
-    2: begin AddPreset(20,U([$5DDD,$76F4,$7DDA])); AddPreset(21,U([$5DDD,$92ED,$89D2])); AddPreset(22,U([$5DDD,$30D9,$30B8,$30A7]));
+    2: begin AddPreset(20,U([$76F4,$7DDA])); AddPreset(21,U([$92ED,$89D2])); AddPreset(22,U([$30D9,$30B8,$30A7]));
       AddPreset(23,U([$5186])); AddPreset(24,U([$56DB,$89D2])); AddPreset(25,U([$89D2,$4E38])); AddPreset(26,U([$9589,$3058,$305F,$30D1,$30B9])); AddPreset(27,U([$30D9,$30B8,$30A7,$30D1,$30B9])); end;
     3: begin AddPreset(100,U([$99C5])); AddPreset(101,U([$4FE1,$53F7])); AddPreset(102,U([$6A2A,$65AD,$6B69,$9053]));
       AddPreset(103,U([$6B69,$9053,$6A4B])); AddPreset(104,U([$756A,$53F7])); AddPreset(105,U([$99D0,$8ECA,$5834]));
@@ -156,9 +156,9 @@ begin
     4: begin AddPreset(200,U([$968E,$6BB5])+' '+U([$4E0A,$308A]));
       AddPreset(201,U([$968E,$6BB5])+' '+U([$4E0B,$308A]));
       AddPreset(202,U([$6B69,$9053,$6A4B])); end;
-    5: begin AddPreset(300,U([$5EFA,$7269])+' '+U([$56DB,$89D2]));
-      AddPreset(301,U([$5EFA,$7269])+' '+U([$89D2,$4E38]));
-      AddPreset(302,U([$5EFA,$7269])+' '+U([$89D2,$4E38,$56DB,$89D2])); end;
+    5: begin AddPreset(300,U([$56DB,$89D2]));
+      AddPreset(301,U([$89D2,$4E38]));
+      AddPreset(302,U([$89D2,$4E38,$56DB,$89D2])); end;
     6: begin AddPreset(310,U([$76F4,$7DDA])); AddPreset(311,U([$81EA,$7531,$66F2,$7DDA]));
       AddPreset(312,U([$9023,$7D9A])); AddPreset(313,U([$56DB,$89D2]));
       AddPreset(314,U([$89D2,$4E38])); AddPreset(315,U([$9589,$3058,$305F,$56F3,$5F62]));
@@ -166,11 +166,11 @@ begin
     7: begin AddPreset(320,U([$6587,$5B57])); AddPreset(321,U([$7D4C,$8DEF,$6587,$5B57])); end;
     8: begin AddPreset(330,U([$5F27,$5F62])); AddPreset(331,U([$5F27])); end;
     9: begin
-      AddPreset(340,U([$30EB,$30FC,$30C8])+' '+U([$76F4,$7DDA]));
-      AddPreset(341,U([$30EB,$30FC,$30C8])+' '+U([$92ED,$89D2,$9023,$7D9A]));
-      AddPreset(342,U([$30EB,$30FC,$30C8])+' '+U([$30D9,$30B8,$30A7,$9023,$7D9A]));
-      AddPreset(343,U([$30EB,$30FC,$30C8])+' '+U([$958B,$59CB,$70B9]));
-      AddPreset(344,U([$30EB,$30FC,$30C8])+' '+U([$7D42,$4E86,$70B9]));
+      AddPreset(340,U([$76F4,$7DDA]));
+      AddPreset(341,U([$92ED,$89D2,$9023,$7D9A]));
+      AddPreset(342,U([$30D9,$30B8,$30A7,$9023,$7D9A]));
+      AddPreset(343,U([$958B,$59CB,$70B9]));
+      AddPreset(344,U([$7D42,$4E86,$70B9]));
     end;
   end;
 end;

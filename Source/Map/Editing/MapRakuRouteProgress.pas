@@ -36,13 +36,20 @@ begin Result:=Hypot(A.X-B.X,A.Y-B.Y); end;
 function MarkerPosition(Layer: TMapRakuGroupLayer; out Position: TPointF): Boolean;
 var Bounds: TRectF;
 begin
+  // マーカーは通常の移動操作で子レイヤー座標が平行移動する。保存時点の
+  // RouteMarkerPosition はその操作では更新されないため、常に表示中の記号中心を
+  // 優先する。開始・終了記号は原点中心の円なので外接矩形の中心がスナップ位置になる。
+  Result:=TryGetMapRakuLayerBounds(Layer,Bounds);
+  if Result then begin
+    Position:=Bounds.CenterPoint;
+    Exit;
+  end;
+  // 壊れた記号など、表示領域を得られない場合だけ保存座標を使う。
   if Layer.HasRouteMarkerPosition then begin
     Position:=Layer.RouteMarkerPosition;
     Exit(True);
   end;
-  // 旧ファイルだけは位置保存前の見た目から復元する。
-  Result:=TryGetMapRakuLayerBounds(Layer,Bounds);
-  if Result then Position:=Bounds.CenterPoint else Position:=PointF(0,0);
+  Position:=PointF(0,0);
 end;
 
 procedure AddPathSamples(var Route:TMapRakuRouteProgressData;
@@ -78,10 +85,11 @@ var Paths,AllPaths:TArray<TVectArtPathLayer>; Used:TArray<Boolean>; StartMarker,
   function FindTraversal(const Position:TPointF; UsedCount:Integer):Boolean;
   var K,E:Integer; P,NextPosition:TPointF;
   begin
-    // 重なり・折返しでは候補が複数になる。終了点に到達する全区間の順序を
-    // 深さ優先で確定するため、作成順に候補を試す。
-    if UsedCount=Length(Paths) then
-      Exit(Distance(Position,EndPoint)<=ROUTE_ENDPOINT_TOLERANCE);
+    // 区間は作成時に端点スナップされる。その接続だけを辿り、終了マーカーに
+    // 到達した時点で確定する。同じ論理IDでも、終点後へ延長した線は別経路として
+    // プレビューには含めない。
+    if (UsedCount>0) and (Distance(Position,EndPoint)<=ROUTE_ENDPOINT_TOLERANCE) then
+      Exit(True);
     for K:=0 to High(Paths) do begin
       if Used[K] then Continue;
       for E:=0 to 1 do begin
@@ -154,7 +162,7 @@ begin
   if (EndMarker=nil) or not MarkerPosition(EndMarker,EndPoint) then begin ErrorText:='終了点がありません'; Exit; end;
   SetLength(Used,Length(Paths));
   if not FindTraversal(StartPoint,0) then begin
-    ErrorText:=Format('開始点%sから終了点%sまで、全区間を通る順序がありません / 区間[%s]',
+    ErrorText:=Format('開始点%sから終了点%sまで、端点スナップによる接続がありません / 区間[%s]',
       [PointText(StartPoint),PointText(EndPoint),RemainingPathsText]);
     Exit;
   end;

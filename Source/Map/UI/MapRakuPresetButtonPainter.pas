@@ -21,11 +21,13 @@ var R:TRect; Y:Integer;
     ACanvas.Pen.Color:=Color; ACanvas.Pen.Width:=IfThen(Rail,7,5);
     P[0]:=Point(8,28); P[1]:=Point(25,16); P[2]:=Point(45,38); P[3]:=Point(64,20);
     if Curved then ACanvas.PolyBezier([P[0],P[1],P[2],P[3]])
-    else if APreset in [0,10,13,20] then begin ACanvas.MoveTo(8,27); ACanvas.LineTo(64,27); end
+    else if (APreset=0) or (APreset=10) or (APreset=13) or
+      (APreset=20) or (APreset=340) then begin ACanvas.MoveTo(8,27); ACanvas.LineTo(64,27); end
     else ACanvas.Polyline(P);
     if Rail then begin ACanvas.Pen.Color:=Secondary; ACanvas.Pen.Width:=2;
       if Curved then ACanvas.PolyBezier([P[0],P[1],P[2],P[3]])
-      else if APreset in [0,10,13,20] then begin ACanvas.MoveTo(8,27); ACanvas.LineTo(64,27); end
+      else if (APreset=0) or (APreset=10) or (APreset=13) or
+        (APreset=20) or (APreset=340) then begin ACanvas.MoveTo(8,27); ACanvas.LineTo(64,27); end
       else ACanvas.Polyline(P); end;
   end;
   // 本描画と同じ破線・枕木規則を縮図にも使い、表示比率を一致させる。

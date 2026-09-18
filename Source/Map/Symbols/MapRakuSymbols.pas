@@ -12,6 +12,9 @@ function ValidateRouteMarkers(Document: TVectArtDocument;
   out ErrorText: string): Boolean;
 implementation
 uses System.Math, System.SysUtils, Vcl.Graphics, MapRakuEditCommands, MapRakuLayerGeometry, MapRakuPathSnap, MapRakuTextGeometry;
+const
+  // 開始・終了は線上ではなく、必ずルート区間の端点に置く。
+  ROUTE_MARKER_ENDPOINT_SNAP_TOLERANCE = 48.0;
 
 function RouteIdentifier(Path: TVectArtPathLayer): string;
 begin
@@ -158,11 +161,15 @@ begin
     end;
     9: Text(Result,'→',-30,-15,60,30,clRed);
     10: begin
-      Circle(Result,0,0,15,clLime); Circle(Result,0,0,9,clWhite);
-      Text(Result,'S',-8,-11,16,22,clBlack);
+      // テキスト描画の左右座標系に合わせ、Ƨ を使って表示上は通常の S にする。
+      Circle(Result,0,0,18,clBlack); Circle(Result,0,0,15,$00009000);
+      Circle(Result,0,0,9,clWhite);
+      Text(Result,'Ƨ',-8,-11,16,22,clBlack);
     end;
     11: begin
-      Circle(Result,0,0,15,clRed); Circle(Result,0,0,9,clWhite);
+      // 赤いルート線から分離できるよう、黒縁と橙色で終了点を強調する。
+      Circle(Result,0,0,18,clBlack); Circle(Result,0,0,15,$000080FF);
+      Circle(Result,0,0,9,clWhite);
       Text(Result,'E',-8,-11,16,22,clBlack);
     end;
   end;
@@ -192,8 +199,13 @@ begin
   G := CreateMapSymbol(Kind, LabelText);
   if Kind=10 then G.RouteMarkerKind:='start'
   else if Kind=11 then G.RouteMarkerKind:='end';
-  if Snap and (Kind in [10,11]) and
-     NearestMapEndpoint(Document,Position,32,False,'route',Endpoint) then begin
+  if Kind in [10,11] then begin
+    // Alt を押していてもルートマーカーだけは端点への吸着を解除しない。
+    if not NearestMapEndpoint(Document,Position,ROUTE_MARKER_ENDPOINT_SNAP_TOLERANCE,
+      False,'route',Endpoint) then begin
+      G.Free;
+      Exit;
+    end;
     Position := Endpoint.Point;
     Path := Endpoint.Path;
     G.RoutePathId := RouteIdentifier(Path);

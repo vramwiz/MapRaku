@@ -494,6 +494,9 @@ begin
     R := Road('route',PointF(180,120),PointF(360,120));
     R.RouteId:='route-progress-test';
     InsertMapPath(D,H,R);
+    I:=D.LayerCount;
+    PlaceMapSymbol(D,H,10,'開始点',PointF(0,120),True);
+    Check(D.LayerCount=I,'Route marker must not be placed on a route interior');
     PlaceMapSymbol(D,H,10,'開始点',PointF(-180,120),True);
     PlaceMapSymbol(D,H,11,'終了点',PointF(360,120),True);
     Check(ValidateRouteMarkers(D,E),'Route markers: '+E);
