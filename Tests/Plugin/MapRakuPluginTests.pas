@@ -21,6 +21,7 @@ type
   TGetTable = function: PFILTER_PLUGIN_TABLE; cdecl;
   PStringItem = ^TFILTER_ITEM_STRING;
   PButtonItem = ^TFILTER_ITEM_BUTTON;
+  PTrackItem = ^TFILTER_ITEM_TRACK;
   TModalDriver = class
     Accept: Boolean;
     SawEndpoint: Boolean;
@@ -43,6 +44,23 @@ end;
 procedure Check(Value: Boolean; const MessageText: string);
 begin
   if not Value then raise Exception.Create(MessageText);
+end;
+
+function FindPluginItem(Table: PFILTER_PLUGIN_TABLE;
+  const Name: string): Pointer;
+var I: Integer; Item: Pointer; ItemName: PWideChar;
+begin
+  Result := nil;
+  if (Table = nil) or (Table^.Items = nil) then Exit;
+  I := 0;
+  while True do
+  begin
+    Item := PPointer(NativeUInt(Table^.Items) + NativeUInt(I) * SizeOf(Pointer))^;
+    if Item = nil then Exit;
+    ItemName := PPointer(NativeUInt(Item) + SizeOf(Pointer))^;
+    if (ItemName <> nil) and (string(ItemName) = Name) then Exit(Item);
+    Inc(I);
+  end;
 end;
 
 procedure GetImage(Buffer: PPIXEL_RGBA); cdecl;
@@ -97,10 +115,15 @@ begin
       Table := GetTable();
       Check((string(Table^.Name) = '地図') and (string(Table^.Label_) = 'SYNC'), 'Registration mismatch');
       Check(Table = GetTable(), 'Registration must be stable');
-      Button := PButtonItem(Table^.Items^);
-      Data := PStringItem(PPointer(NativeUInt(Table^.Items) + SizeOf(Pointer))^);
+      Button := PButtonItem(FindPluginItem(Table, '編集'));
+      Data := PStringItem(FindPluginItem(Table, '地図データ'));
       Check((string(Button^.Name) = '編集') and Assigned(Button^.Callback), 'Missing editor');
-      Check(string(Data^.Name) = '地図データ', 'Missing data item');
+      Check((Data <> nil) and (string(Data^.Name) = '地図データ'), 'Missing data item');
+      Check((PTrackItem(FindPluginItem(Table, '進行位置')) <> nil) and
+        (PTrackItem(FindPluginItem(Table, '進行位置'))^.Step = 0.01),
+        'Missing progress parameter');
+      Check(FindPluginItem(Table, 'マーカー画像の基準点') <> nil,
+        'Missing marker image anchor parameter');
       Obj := Default(TOBJECT_INFO); Obj.ID := 41; Obj.EffectID := 1;
       Obj.Width := W; Obj.Height := H;
       Video := Default(TFILTER_PROC_VIDEO); Video.Object_ := @Obj;

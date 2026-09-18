@@ -17,12 +17,16 @@ implementation
 
 uses
   PluginFilterTable, MapRakuEditorHost, MapRakuFilterContext,
+  MapRakuPluginRouteMarker,
   System.UITypes, TextRendererSkiaBootstrap, TextRendererSkiaRuntime,
   Vcl.Dialogs, Winapi.Windows;
 
 const
   FILTER_EFFECT_NAME = '地図';
   LAYOUT_DATA_ITEM_NAME = '地図データ';
+  // TFILTER_ITEM_FILE は表示名とワイルドカードを NUL で区切る Windows 形式。
+  // "|" 区切りは解釈されず、ファイル種類の表示へそのまま出てしまう。
+  MARKER_PNG_FILE_FILTER = 'PNG画像 (*.png)'#0'*.png'#0#0;
   GET_MODULE_HANDLE_EX_FLAG_PIN = $00000001;
   GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS = $00000004;
 
@@ -31,6 +35,20 @@ function GetModuleHandleExW(Flags: DWORD; ModuleName: PWideChar;
 
 var
   EditButton: TFILTER_ITEM_BUTTON;
+  ProgressItem, MarkerScaleItem, MarkerOpacityItem, MarkerOffsetXItem,
+    MarkerOffsetYItem, RotationCorrectionItem, DisplayWidthItem,
+    DisplayHeightItem, ScrollStartItem: TFILTER_ITEM_TRACK;
+  MarkerFileItem: TFILTER_ITEM_FILE;
+  MarkerFileValue: array[0..32767] of WideChar;
+  MarkerColorItem: TFILTER_ITEM_COLOR;
+  MarkerSelectItem, MarkerRotationItem: TFILTER_ITEM_SELECT;
+  MarkerImageAnchorItem: TFILTER_ITEM_SELECT;
+  RouteDisplayItem: TFILTER_ITEM_SELECT;
+  MarkerSelectList: array[0..1] of TFILTER_ITEM_SELECT_ITEM;
+  MarkerRotationList: array[0..3] of TFILTER_ITEM_SELECT_ITEM;
+  MarkerImageAnchorList: array[0..2] of TFILTER_ITEM_SELECT_ITEM;
+  RouteDisplayList: array[0..2] of TFILTER_ITEM_SELECT_ITEM;
+  RouteColorItem: TFILTER_ITEM_COLOR;
   LayoutDataItem: TFILTER_ITEM_STRING;
   MapRakuContexts: TMapRakuFilterContexts;
   MapRakuSkiaAcquired: Boolean;
@@ -116,6 +134,7 @@ end;
 function PassThroughVideo(Video: PFILTER_PROC_VIDEO): Byte; cdecl;
 var
   Context: TMapRakuFilterContext;
+  Motion: TMapRakuPluginRouteMotion;
   SerializedData: string;
 begin
   Result := 1;
@@ -130,7 +149,26 @@ begin
       Context := MapRakuContexts.GetContext(Video);
       if Context <> nil then
       begin
-        Context.ProcessVideo(Video, SerializedData);
+        Motion.ProgressPercent := ProgressItem.Value;
+        Motion.MarkerColor := GetColor(MarkerColorItem);
+        Motion.MarkerOpacity := MarkerOpacityItem.Value;
+        Motion.MarkerScale := MarkerScaleItem.Value;
+        Motion.MarkerOffsetX := MarkerOffsetXItem.Value;
+        Motion.MarkerOffsetY := MarkerOffsetYItem.Value;
+        Motion.MarkerRotation := MarkerRotationItem.Value;
+        Motion.MarkerImageAnchor := MarkerImageAnchorItem.Value;
+        Motion.RotationCorrection := RotationCorrectionItem.Value;
+        Motion.RouteDisplay := RouteDisplayItem.Value;
+        Motion.RouteColor := GetColor(RouteColorItem);
+        Motion.DisplayWidth := DisplayWidthItem.Value;
+        Motion.DisplayHeight := DisplayHeightItem.Value;
+        Motion.ScrollStartRate := ScrollStartItem.Value;
+        Motion.DrawMarker := True;
+        if MarkerFileItem.Value = nil then
+          Motion.MarkerFileName := ''
+        else
+          Motion.MarkerFileName := MarkerFileItem.Value;
+        Context.ProcessVideo(Video, SerializedData, Motion);
       end;
     end;
   except
@@ -180,6 +218,34 @@ begin
   if GTable.Name = nil then
   begin
     AddButton(EditButton, '編集', EditButtonCallback);
+    AddTrack(ProgressItem, '進行位置', 0, 0, 100, 0.01);
+    AddSelectList(RouteDisplayList, 'なし', 0);
+    AddSelectList(RouteDisplayList, '軌跡', 1);
+    AddSelect(RouteDisplayItem, 'ルート', 0, @RouteDisplayList[0]);
+    AddColor(RouteColorItem, 'ルート色', $000000FF);
+    // AviUtl2はファイル選択結果をValueのバッファへ書く。文字列リテラルを
+    // 渡すと選択後のパスを保持できないため、プラグインが所有する領域を使う。
+    AddFile(MarkerFileItem, 'マーカー画像ファイル', MarkerFileValue,
+      PWideChar(MARKER_PNG_FILE_FILTER));
+    AddSelectList(MarkerSelectList, 'プレビューマーカー', 0);
+    AddSelect(MarkerSelectItem, 'マーカー選択', 0, @MarkerSelectList[0]);
+    AddColor(MarkerColorItem, 'マーカー色', $00FF8000);
+    AddTrack(MarkerScaleItem, 'マーカー拡大率', 100, 1, 1000, 1);
+    AddSelectList(MarkerImageAnchorList, '中央', 0);
+    AddSelectList(MarkerImageAnchorList, '下中央', 1);
+    AddSelect(MarkerImageAnchorItem, 'マーカー画像の基準点', 0,
+      @MarkerImageAnchorList[0]);
+    AddTrack(MarkerOpacityItem, 'マーカー透明度', 100, 0, 100, 1);
+    AddTrack(MarkerOffsetXItem, 'マーカーオフセットX', 0, -4096, 4096, 1);
+    AddTrack(MarkerOffsetYItem, 'マーカーオフセットY', 0, -4096, 4096, 1);
+    AddSelectList(MarkerRotationList, '固定', 0);
+    AddSelectList(MarkerRotationList, '進行方向', 1);
+    AddSelectList(MarkerRotationList, '進行方向＋回転補正', 2);
+    AddSelect(MarkerRotationItem, 'マーカー回転', 0, @MarkerRotationList[0]);
+    AddTrack(RotationCorrectionItem, '回転補正角度', 0, -180, 180, 0.1);
+    AddTrack(DisplayWidthItem, '表示幅', 1920, 1, 16384, 1);
+    AddTrack(DisplayHeightItem, '表示高さ', 1080, 1, 16384, 1);
+    AddTrack(ScrollStartItem, 'スクロール開始率', 25, 0, 50, 1);
     AddString(LayoutDataItem, LAYOUT_DATA_ITEM_NAME, '');
     SetupPluginTable(FILTER_FLAG_VIDEO or FILTER_FLAG_FILTER,
       FILTER_EFFECT_NAME,

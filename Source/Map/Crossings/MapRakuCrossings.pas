@@ -47,7 +47,7 @@ end;
 
 function IsCrossingPath(const S:string):Boolean;
 begin
-  Result:=SameText(S,'road') or IsRail(S) or SameText(S,'river');
+  Result:=SameText(S,'road') or SameText(S,'route') or IsRail(S) or SameText(S,'river');
 end;
 
 function SegmentIntersection(const A, B, C, D:TPointF; out P:TPointF;
@@ -66,8 +66,8 @@ function CrossingKind(A,B:TVectArtPathLayer; SameLevel:Boolean):TMapRakuCrossing
 begin
   if SameLevel then
   begin
-    if (SameText(A.MapElement,'road') and IsRail(B.MapElement)) or
-       (SameText(B.MapElement,'road') and IsRail(A.MapElement)) then
+    if ((SameText(A.MapElement,'road') or SameText(A.MapElement,'route')) and IsRail(B.MapElement)) or
+       ((SameText(B.MapElement,'road') or SameText(B.MapElement,'route')) and IsRail(A.MapElement)) then
       Exit(mckRailroadCrossing);
     if (SameText(A.MapElement,'road') and SameText(B.MapElement,'river')) or
        (SameText(B.MapElement,'road') and SameText(A.MapElement,'river')) then

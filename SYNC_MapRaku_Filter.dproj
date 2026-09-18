@@ -16,7 +16,6 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Debug' or '$(Cfg_1)'!=''">
         <Cfg_1>true</Cfg_1>
-        <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
         <CfgParent>Base</CfgParent>
         <Base>true</Base>
     </PropertyGroup>
@@ -70,6 +69,7 @@
         <DCCReference Include="Lib\AviUtl2\PluginFilterContextManager.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuFilterPlugin.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuFilterContext.pas"/>
+        <DCCReference Include="Source\PlacementPlugin\MapRakuPluginRouteMarker.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuPluginDocument.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuEditorHost.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuFrameCapture.pas"/>
@@ -79,6 +79,7 @@
         <DCCReference Include="Source\Map\Crossings\MapRakuBridgeSpans.pas"/>
         <DCCReference Include="Source\Map\Rendering\Crossings\MapRakuCrossingRenderer.pas"/>
         <DCCReference Include="Source\Map\Editing\MapRakuPathEditor.pas"/>
+        <DCCReference Include="Source\Map\Editing\MapRakuRouteProgress.pas"/>
         <DCCReference Include="Source\Map\Export\MapRakuFile.pas"/>
         <DCCReference Include="Source\Map\Editing\MapRakuPathSnap.pas"/>
         <DCCReference Include="Source\Map\Appearance\MapRakuTheme.pas"/>
