@@ -7,10 +7,12 @@ procedure ServePluginEditor;
 
 implementation
 
-uses System.SysUtils, System.Classes, System.UITypes, System.JSON, Winapi.Windows,
+uses System.SysUtils, System.Classes, System.UITypes, System.Types, System.Math,
+  System.JSON, Winapi.Windows,
   Vcl.Forms, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics,
   AviUtl2FilterTypes, MapRakuDocument, MapRakuDocumentJson,
   MapRakuPluginDocument, MapRakuFilterContext, MapRakuPluginRender,
+  MapRakuPluginRouteMarker,
   MapRakuRenderer, MapRakuEditorHost, MapRakuMainForm, MapRakuCanvas,
   MapRakuAutomationWire, MapRakuAutomationFactory,
   TextRendererSkiaRuntime, TextRendererSkiaBootstrap;
@@ -124,6 +126,12 @@ begin
         'Missing progress parameter');
       Check(FindPluginItem(Table, 'マーカー画像の基準点') <> nil,
         'Missing marker image anchor parameter');
+      Check((FindPluginItem(Table, 'アニメーション') <> nil) and
+        (FindPluginItem(Table, '揺れ') <> nil) and
+        (FindPluginItem(Table, '揺れ量') <> nil) and
+        (FindPluginItem(Table, '揺れ速度') <> nil) and
+        (FindPluginItem(Table, '揺れ補助') <> nil),
+        'Missing marker animation parameters');
       Obj := Default(TOBJECT_INFO); Obj.ID := 41; Obj.EffectID := 1;
       Obj.Width := W; Obj.Height := H;
       Video := Default(TFILTER_PROC_VIDEO); Video.Object_ := @Obj;
@@ -261,11 +269,45 @@ begin
   Writeln('PASS context identity and ambiguous background suppression');
 end;
 
+procedure TestMarkerAnimation;
+var Motion: TMapRakuPluginRouteMotion; Base, Position: TPointF;
+  Angle: Single;
+begin
+  Base := PointF(40, 30);
+  Motion := Default(TMapRakuPluginRouteMotion);
+  Motion.AnimationAmount := 10;
+  Motion.AnimationSpeed := 0.5;
+  Motion.AnimationMode := 2;
+  Motion.ProgressPercent := 0;
+  ApplyMapRakuPluginMarkerAnimation(Motion, Base, 15, Position, Angle);
+  Check(SameValue(Position.X, Base.X) and SameValue(Position.Y, Base.Y) and
+    SameValue(Angle, 15),
+    'Animation changed route start');
+  Motion.ProgressPercent := 50;
+  ApplyMapRakuPluginMarkerAnimation(Motion, Base, 15, Position, Angle);
+  Check((Position.Y < Base.Y) and SameValue(Angle, 15),
+    'Bounce was not upward only');
+  Motion.ProgressPercent := 100;
+  ApplyMapRakuPluginMarkerAnimation(Motion, Base, 15, Position, Angle);
+  Check(SameValue(Position.X, Base.X) and SameValue(Position.Y, Base.Y) and
+    SameValue(Angle, 15),
+    'Animation changed route end');
+  Motion.AnimationMode := 4;
+  Motion.AnimationSpeed := 0.5;
+  Motion.ProgressPercent := 50;
+  ApplyMapRakuPluginMarkerAnimation(Motion, Base, 15, Position, Angle);
+  Check(SameValue(Position.X, Base.X) and SameValue(Position.Y, Base.Y) and
+    SameValue(Angle, 25),
+    'Swing did not add to base angle');
+  Writeln('PASS marker animation endpoints, bounce, and swing');
+end;
+
 procedure RunPluginTests(const PluginFile: string);
 begin
   TTextRendererSkiaRuntime.Acquire(BundledSkiaRuntimeFileName);
   try
     TestContexts;
+    TestMarkerAnimation;
     TestBackgrounds;
     TestModal;
     TestDll(PluginFile);

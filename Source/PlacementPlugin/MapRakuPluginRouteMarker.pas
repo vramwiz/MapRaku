@@ -9,6 +9,8 @@ type
     MarkerColor: TColor;
     MarkerRotation: Integer;
     MarkerImageAnchor: Integer;
+    AnimationMode: Integer;
+    AnimationAmount, AnimationSpeed, AnimationAux, AnimationTime: Double;
     RouteDisplay: Integer;
     RouteColor: TColor;
     DisplayWidth, DisplayHeight, ScrollStartRate: Double;
@@ -20,6 +22,10 @@ procedure DrawMapRakuPluginRouteLayer(Document: TVectArtDocument;
   LayerIndex: Integer; MarkerImage: TVectArtRenderBuffer);
 function TryMapRakuPluginRoutePosition(Document: TVectArtDocument;
   ProgressPercent: Double; out Position: TPointF): Boolean;
+// 基本位置・角度へ揺れ補正を加える。開始／終了位置では必ず補正を0にする。
+procedure ApplyMapRakuPluginMarkerAnimation(
+  const Motion: TMapRakuPluginRouteMotion; const BasePosition: TPointF;
+  BaseAngle: Single; out Position: TPointF; out Angle: Single);
 implementation
 uses System.Math, Vcl.Graphics, Winapi.Windows, MapRakuRouteProgress;
 procedure BlendPixel(Target: TVectArtRenderBuffer; X,Y: Integer; Color:TColor; Alpha:Byte);
@@ -90,6 +96,30 @@ begin
     Document.CanvasLayer.Width,(Position.Y+Document.CanvasLayer.Height*0.5)*
     Target.Height/Document.CanvasLayer.Height);
 end;
+procedure ApplyMapRakuPluginMarkerAnimation(
+  const Motion: TMapRakuPluginRouteMotion; const BasePosition: TPointF;
+  BaseAngle: Single; out Position: TPointF; out Angle: Single);
+var Progress, Envelope, Phase: Double;
+begin
+  Position:=BasePosition;
+  Angle:=BaseAngle;
+  Progress:=EnsureRange(Motion.ProgressPercent,0,100)*0.01;
+  // 完全に停止した始点・終点で姿勢が残ると、配置位置とマーカーの接続が
+  // 見た目にもずれる。位相に関係なくゼロ補正を優先する。
+  if (Motion.AnimationMode=0) or (Progress<=0) or (Progress>=1) then Exit;
+  Envelope:=Sin(Pi*Progress);
+  Phase:=DegToRad(Motion.AnimationAux);
+  case Motion.AnimationMode of
+    1,3: Phase:=Phase+2*Pi*Motion.AnimationSpeed*Motion.AnimationTime;
+    2,4: Phase:=Phase+2*Pi*Motion.AnimationSpeed*Progress;
+  end;
+  case Motion.AnimationMode of
+    // バウンドはルートより下へ潜らせず、乗り物が地面を通り抜けないようにする。
+    1,2: Position.Y:=Position.Y-Abs(Sin(Phase))*Motion.AnimationAmount*Envelope;
+    // 振り子は既存の固定／進行方向角度へ加算する補正として扱う。
+    3,4: Angle:=Angle+Sin(Phase)*Motion.AnimationAmount*Envelope;
+  end;
+end;
 procedure DrawRouteSegment(Target:TVectArtRenderBuffer; const A,B:TPointF;
   Radius:Single; Color:TColor);
 var I,Steps:Integer; P:TPointF;
@@ -143,6 +173,7 @@ begin
   Scale:=Max(0.01,Motion.MarkerScale*0.01); Alpha:=EnsureRange(Round(Motion.MarkerOpacity*2.55),0,255); Angle:=0;
   if Motion.MarkerRotation<>0 then Angle:=RadToDeg(ArcTan2(T.Y,T.X))+90;
   if Motion.MarkerRotation=2 then Angle:=Angle+Motion.RotationCorrection;
+  ApplyMapRakuPluginMarkerAnimation(Motion,PP,Angle,PP,Angle);
   if (MarkerImage<>nil)and(MarkerImage.Width>0) then
     DrawImageMarker(Target,MarkerImage,PP,Scale,Angle,Alpha,
       Motion.MarkerImageAnchor)

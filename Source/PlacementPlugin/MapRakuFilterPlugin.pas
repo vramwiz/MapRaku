@@ -37,17 +37,20 @@ var
   EditButton: TFILTER_ITEM_BUTTON;
   ProgressItem, MarkerScaleItem, MarkerOpacityItem, MarkerOffsetXItem,
     MarkerOffsetYItem, RotationCorrectionItem, DisplayWidthItem,
-    DisplayHeightItem, ScrollStartItem: TFILTER_ITEM_TRACK;
+    DisplayHeightItem, ScrollStartItem, AnimationAmountItem,
+    AnimationSpeedItem, AnimationAuxItem: TFILTER_ITEM_TRACK;
   MarkerFileItem: TFILTER_ITEM_FILE;
   MarkerFileValue: array[0..32767] of WideChar;
   MarkerColorItem: TFILTER_ITEM_COLOR;
   MarkerSelectItem, MarkerRotationItem: TFILTER_ITEM_SELECT;
   MarkerImageAnchorItem: TFILTER_ITEM_SELECT;
-  RouteDisplayItem: TFILTER_ITEM_SELECT;
+  RouteDisplayItem, AnimationModeItem: TFILTER_ITEM_SELECT;
+  AnimationGroupItem: TFILTER_ITEM_GROUP;
   MarkerSelectList: array[0..1] of TFILTER_ITEM_SELECT_ITEM;
   MarkerRotationList: array[0..3] of TFILTER_ITEM_SELECT_ITEM;
   MarkerImageAnchorList: array[0..2] of TFILTER_ITEM_SELECT_ITEM;
   RouteDisplayList: array[0..2] of TFILTER_ITEM_SELECT_ITEM;
+  AnimationModeList: array[0..5] of TFILTER_ITEM_SELECT_ITEM;
   RouteColorItem: TFILTER_ITEM_COLOR;
   LayoutDataItem: TFILTER_ITEM_STRING;
   MapRakuContexts: TMapRakuFilterContexts;
@@ -157,6 +160,14 @@ begin
         Motion.MarkerOffsetY := MarkerOffsetYItem.Value;
         Motion.MarkerRotation := MarkerRotationItem.Value;
         Motion.MarkerImageAnchor := MarkerImageAnchorItem.Value;
+        Motion.AnimationMode := AnimationModeItem.Value;
+        Motion.AnimationAmount := AnimationAmountItem.Value;
+        Motion.AnimationSpeed := AnimationSpeedItem.Value;
+        Motion.AnimationAux := AnimationAuxItem.Value;
+        if Video^.Object_ = nil then
+          Motion.AnimationTime := 0
+        else
+          Motion.AnimationTime := Video^.Object_^.Time;
         Motion.RotationCorrection := RotationCorrectionItem.Value;
         Motion.RouteDisplay := RouteDisplayItem.Value;
         Motion.RouteColor := GetColor(RouteColorItem);
@@ -246,6 +257,19 @@ begin
     AddTrack(DisplayWidthItem, '表示幅', 1920, 1, 16384, 1);
     AddTrack(DisplayHeightItem, '表示高さ', 1080, 1, 16384, 1);
     AddTrack(ScrollStartItem, 'スクロール開始率', 25, 0, 50, 1);
+    // 頻繁に触らない補助設定は表示関連の後、内部JSONの直前へまとめる。
+    AddGroup(AnimationGroupItem, 'アニメーション', 0);
+    AddSelectList(AnimationModeList, '無し', 0);
+    AddSelectList(AnimationModeList, 'バウンド（一定）', 1);
+    AddSelectList(AnimationModeList, 'バウンド（進行速度）', 2);
+    AddSelectList(AnimationModeList, '振り子（一定）', 3);
+    AddSelectList(AnimationModeList, '振り子（進行速度）', 4);
+    AddSelect(AnimationModeItem, '揺れ', 0, @AnimationModeList[0]);
+    AddTrack(AnimationAmountItem, '揺れ量', 10, 0, 100, 1);
+    AddTrack(AnimationSpeedItem, '揺れ速度', 2, 0, 20, 0.1);
+    // 現在は位相（度）として使う。開始・終了では常に0へ収束するため、
+    // 複数マーカーの揺れをずらしても端点の見た目は崩れない。
+    AddTrack(AnimationAuxItem, '揺れ補助', 0, -180, 180, 1);
     AddString(LayoutDataItem, LAYOUT_DATA_ITEM_NAME, '');
     SetupPluginTable(FILTER_FLAG_VIDEO or FILTER_FLAG_FILTER,
       FILTER_EFFECT_NAME,
