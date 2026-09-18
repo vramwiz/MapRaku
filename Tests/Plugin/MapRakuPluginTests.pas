@@ -123,13 +123,13 @@ begin
       Check((PTrackItem(FindPluginItem(Table, '進行位置')) <> nil) and
         (PTrackItem(FindPluginItem(Table, '進行位置'))^.Step = 0.01),
         'Missing progress parameter');
-      Check((FindPluginItem(Table,'マーカー透明度')<>nil) and
-        (FindPluginItem(Table,'マーカー透明度（道路の下）')<>nil),
+      Check((FindPluginItem(Table,'透明度')<>nil) and
+        (FindPluginItem(Table,'下側透明度')<>nil),
         'Missing normal/underpass transparency controls');
-      Check((PTrackItem(FindPluginItem(Table,'マーカー透明度'))^.Value=0) and
-        (PTrackItem(FindPluginItem(Table,'マーカー透明度（道路の下）'))^.Value=100),
+      Check((PTrackItem(FindPluginItem(Table,'透明度'))^.Value=0) and
+        (PTrackItem(FindPluginItem(Table,'下側透明度'))^.Value=100),
         'Transparency defaults must be normal opaque and underpass transparent');
-      Check(FindPluginItem(Table, 'マーカー画像の基準点') <> nil,
+      Check(FindPluginItem(Table, '基準点') <> nil,
         'Missing marker image anchor parameter');
       Check((FindPluginItem(Table, 'ポインターの種類') <> nil) and
         (FindPluginItem(Table, 'ポインター色') <> nil) and

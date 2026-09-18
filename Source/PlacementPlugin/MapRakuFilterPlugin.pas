@@ -45,7 +45,7 @@ var
   MarkerSelectItem, MarkerRotationItem: TFILTER_ITEM_SELECT;
   MarkerImageAnchorItem: TFILTER_ITEM_SELECT;
   RouteDisplayItem, AnimationModeItem, PointerKindItem: TFILTER_ITEM_SELECT;
-  AnimationGroupItem: TFILTER_ITEM_GROUP;
+  AnimationGroupItem, MarkerGroupItem: TFILTER_ITEM_GROUP;
   MarkerSelectList: array[0..1] of TFILTER_ITEM_SELECT_ITEM;
   MarkerRotationList: array[0..3] of TFILTER_ITEM_SELECT_ITEM;
   MarkerImageAnchorList: array[0..2] of TFILTER_ITEM_SELECT_ITEM;
@@ -240,26 +240,29 @@ begin
     AddSelectList(RouteDisplayList, '軌跡', 1);
     AddSelect(RouteDisplayItem, 'ルート', 0, @RouteDisplayList[0]);
     AddColor(RouteColorItem, 'ルート色', $000000FF);
+    // グループは表示上の整理だけで名前空間を分けない。接頭辞なしの項目名は
+    // マーカー専用として予約し、他の機能には対象名を付けて重複を防ぐ。
+    AddGroup(MarkerGroupItem, 'マーカー', 1);
     // AviUtl2はファイル選択結果をValueのバッファへ書く。文字列リテラルを
     // 渡すと選択後のパスを保持できないため、プラグインが所有する領域を使う。
-    AddFile(MarkerFileItem, 'マーカー画像ファイル', MarkerFileValue,
+    AddFile(MarkerFileItem, '画像ファイル', MarkerFileValue,
       PWideChar(MARKER_PNG_FILE_FILTER));
-    AddSelectList(MarkerSelectList, 'プレビューマーカー', 0);
-    AddSelect(MarkerSelectItem, 'マーカー選択', 0, @MarkerSelectList[0]);
-    AddColor(MarkerColorItem, 'マーカー色', $00FF8000);
-    AddTrack(MarkerScaleItem, 'マーカー拡大率', 100, 1, 1000, 1);
+    AddSelectList(MarkerSelectList, '標準ピン', 0);
+    AddSelect(MarkerSelectItem, '種類', 0, @MarkerSelectList[0]);
+    AddColor(MarkerColorItem, '色', $00FF8000);
+    AddTrack(MarkerScaleItem, '拡大率', 100, 1, 1000, 1);
     AddSelectList(MarkerImageAnchorList, '中央', 0);
     AddSelectList(MarkerImageAnchorList, '下中央', 1);
-    AddSelect(MarkerImageAnchorItem, 'マーカー画像の基準点', 0,
+    AddSelect(MarkerImageAnchorItem, '基準点', 0,
       @MarkerImageAnchorList[0]);
-    AddTrack(MarkerTransparencyItem, 'マーカー透明度', 0, 0, 100, 1);
-    AddTrack(MarkerUnderpassTransparencyItem, 'マーカー透明度（道路の下）', 100, 0, 100, 1);
-    AddTrack(MarkerOffsetXItem, 'マーカーオフセットX', 0, -4096, 4096, 1);
-    AddTrack(MarkerOffsetYItem, 'マーカーオフセットY', 0, -4096, 4096, 1);
+    AddTrack(MarkerTransparencyItem, '透明度', 0, 0, 100, 1);
+    AddTrack(MarkerUnderpassTransparencyItem, '下側透明度', 100, 0, 100, 1);
+    AddTrack(MarkerOffsetXItem, 'オフセットX', 0, -4096, 4096, 1);
+    AddTrack(MarkerOffsetYItem, 'オフセットY', 0, -4096, 4096, 1);
     AddSelectList(MarkerRotationList, '固定', 0);
     AddSelectList(MarkerRotationList, '進行方向', 1);
     AddSelectList(MarkerRotationList, '進行方向＋回転補正', 2);
-    AddSelect(MarkerRotationItem, 'マーカー回転', 0, @MarkerRotationList[0]);
+    AddSelect(MarkerRotationItem, '回転', 0, @MarkerRotationList[0]);
     AddTrack(RotationCorrectionItem, '回転補正角度', 0, -180, 180, 0.1);
     AddSelectList(PointerKindList, 'なし', 0);
     AddSelectList(PointerKindList, '三角', 1);
