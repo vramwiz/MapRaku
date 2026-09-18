@@ -3,7 +3,7 @@
         <ProjectGuid>{5C520506-60EA-43D9-B5DD-5A44E6665F25}</ProjectGuid>
         <ProjectVersion>20.4</ProjectVersion>
         <FrameworkType>None</FrameworkType>
-        <Config Condition="'$(Config)'==''">Debug</Config>
+        <Config Condition="'$(Config)'==''">Release</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
         <ProjectName Condition="'$(ProjectName)'==''">SYNC_MapRaku_Filter</ProjectName>
         <TargetedPlatforms>2</TargetedPlatforms>
