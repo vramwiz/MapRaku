@@ -1,4 +1,4 @@
-﻿// 地図の背景色を含めたRGBAを作り、共通レンダラーの出力を映像用にまとめる。
+﻿// 地図の図形だけを透明RGBAへ描き、AviUtl2の入力映像へ重ねる。
 unit MapRakuPluginRender;
 interface
 uses MapRakuDocument, MapRakuRenderer;
@@ -16,7 +16,7 @@ procedure CompositeMapRakuPluginUpperLevels(Document: TVectArtDocument;
   Target: TVectArtRenderBuffer; Width, Height: Integer;
   CurrentPath: TVectArtPathLayer);
 implementation
-uses Vcl.Graphics, Winapi.Windows;
+
 
 function IsPluginHiddenGuide(Layer: TVectArtLayer): Boolean;
 begin
@@ -28,8 +28,8 @@ begin
 end;
 procedure RenderMapRakuPlugin(Document: TVectArtDocument;
   Target: TVectArtRenderBuffer; Width, Height: Integer);
-var Layers: TVectArtRenderBuffer; Pixel: PVectArtRgbaPixel;
-  Color: COLORREF; I: NativeInt; HiddenRoutes: TArray<TVectArtLayer>;
+var Layers: TVectArtRenderBuffer;
+  I: NativeInt; HiddenRoutes: TArray<TVectArtLayer>;
 begin
   Layers := TVectArtRenderBuffer.Create;
   try
@@ -48,19 +48,6 @@ begin
     end;
     Target.SetSize(Width, Height);
     Target.Clear;
-    if Document.CanvasLayer.Visible and not Document.CanvasLayer.Transparent then
-    begin
-      Color := ColorToRGB(Document.CanvasLayer.BackgroundColor);
-      Pixel := Target.Data;
-      for I := 0 to Target.PixelCount - 1 do
-      begin
-        Pixel^.R := GetRValue(Color);
-        Pixel^.G := GetGValue(Color);
-        Pixel^.B := GetBValue(Color);
-        Pixel^.A := 255;
-        Inc(Pixel);
-      end;
-    end;
     CompositeVectArtRgba(Layers, Target.Data, Width, Height);
   finally
     Layers.Free;

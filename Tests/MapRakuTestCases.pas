@@ -2,6 +2,7 @@
 unit MapRakuTestCases;
 interface
 procedure RunMapTests;
+procedure RunRouteDiagnostic(const FileName: string);
 implementation
 uses System.SysUtils, System.Types, System.Classes, System.IOUtils, System.JSON,
   System.Skia, System.UITypes, System.Math,
@@ -13,18 +14,420 @@ uses System.SysUtils, System.Types, System.Classes, System.IOUtils, System.JSON,
   MapRakuExport, MapRakuTheme, MapRakuSymbols, MapRakuMapPanel,
   MapRakuFile, MapRakuPathSnap, MapRakuLayerGeometry, MapRakuRouteProgress,
   MapRakuTextGeometry, MapRakuMainForm, MapRakuPathEditor, MapRakuPathOperations,
-  MapRakuRecentFiles,
+  MapRakuRecentFiles, MapRakuLayerList, MapRakuLayerRenderer,
+  MapRakuPresetThumbnail,
   MapRakuProjectiveTransform, MapRakuSelectionGeometry, MapRakuTestSupport,
   MapRakuConnectionTests, MapRakuCrossingTests;
 type
+  TTestLayerList = class(TVectArtLayerListControl)
+  public
+    procedure RightClickLayer(Layer: TVectArtLayer);
+  end;
   TTestExceptionSink = class
     procedure HandleException(Sender: TObject; E: Exception);
   end;
+procedure RunRouteDiagnostic(const FileName: string);
+var D: TVectArtDocument; R: TMapRakuRouteProgressData;
+  I: Integer; Error, RouteId: string; Valid: Boolean;
+begin
+  TTextRendererSkiaRuntime.Acquire(BundledSkiaRuntimeFileName);
+  D:=TVectArtDocument.Create;
+  try
+    Check(TryDeserializeVectArtDocument(TFile.ReadAllText(FileName,TEncoding.UTF8),D,Error),Error);
+    for I:=1 to D.LayerCount-1 do
+      if (D[I] is TVectArtPathLayer) and (TVectArtPathLayer(D[I]).MapElement='route') then
+      begin
+        RouteId:=MapRakuRouteIdentifier(TVectArtPathLayer(D[I]));
+        Valid:=TryBuildMapRakuRoute(D,RouteId,R,Error);
+        WriteMapRakuRouteDiagnostic(D,RouteId,Error);
+        Writeln(Format('route=%s valid=%s %s',[RouteId,BoolToStr(Valid,True),Error]));
+      end;
+  finally D.Free; TTextRendererSkiaRuntime.Release; end;
+end;
+procedure TTestLayerList.RightClickLayer(Layer: TVectArtLayer);
+var Renderer: TVectArtLayerRenderer; I: Integer; Bounds: TRect;
+begin
+  Renderer := TVectArtLayerRenderer.Create;
+  try
+    Renderer.Document := Document;
+    Renderer.EditorState := EditorState;
+    Renderer.PPI := CurrentPPI;
+    Renderer.LayerIndexAt(ClientRect, 0);
+    for I := 1 to 20 do
+      if Renderer.LayerAt(I) = Layer then
+      begin
+        Bounds := Renderer.LayerItemRect(ClientRect, I);
+        MouseDown(mbRight, [], 100, (Bounds.Top + Bounds.Bottom) div 2);
+        MouseUp(mbRight, [], 100, (Bounds.Top + Bounds.Bottom) div 2);
+        Exit;
+      end;
+    Check(False, 'Context menu test layer must have a visible row');
+  finally
+    Renderer.Free;
+  end;
+end;
+
+procedure CheckContextMenuSelection;
+var D: TVectArtDocument; S: TVectArtEditorState; Host: TForm;
+  List: TTestLayerList; Group: TMapRakuGroupLayer;
+begin
+  D := TVectArtDocument.Create;
+  S := TVectArtEditorState.Create;
+  Host := TForm.CreateNew(nil);
+  try
+    List := TTestLayerList.Create(Host);
+    List.Parent := Host;
+    List.SetBounds(0, 0, 400, 800);
+    List.Document := D;
+    List.EditorState := S;
+    D.InsertLayer(D.LayerCount, TVectArtRectangleLayer.Create('A', RectF(0,0,20,20), 0));
+    D.InsertLayer(D.LayerCount, TVectArtRectangleLayer.Create('B', RectF(30,0,50,20), 0));
+    D.InsertLayer(D.LayerCount, TVectArtRectangleLayer.Create('C', RectF(60,0,80,20), 0));
+    D.SetSelectedLayers([1, 2]);
+    Check(CanGroupCurrentSelection(D,S), 'Ctrl+G available before right click');
+    List.RightClickLayer(D[1]);
+    Check((D.SelectionCount=2) and CanGroupCurrentSelection(D,S),
+      'Right click on selected row must preserve grouping selection');
+    List.RightClickLayer(D[3]);
+    Check((D.SelectionCount=1) and D.IsLayerSelected(3),
+      'Right click on unselected row must select its target');
+    Group := TMapRakuGroupLayer.Create('Group');
+    Group.AddChild(TVectArtRectangleLayer.Create('Child A', RectF(0,0,20,20), 0));
+    Group.AddChild(TVectArtRectangleLayer.Create('Child B', RectF(30,0,50,20), 0));
+    Group.AddChild(TVectArtRectangleLayer.Create('Child C', RectF(60,0,80,20), 0));
+    D.InsertLayer(D.LayerCount, Group);
+    S.OpenGroup := Group;
+    D.SetSelectedLayers([]);
+    S.SetOpenGroupChildren([Group[0], Group[1]]);
+    List.RightClickLayer(Group[0]);
+    Check((S.OpenGroupChildCount=2) and CanGroupCurrentSelection(D,S),
+      'Right click inside group must preserve grouping selection');
+    List.RightClickLayer(Group[2]);
+    Check((S.OpenGroupChildCount=1) and (S.OpenGroupChild=Group[2]),
+      'Right click on unselected child must select its target');
+  finally
+    Host.Free;
+    S.Free;
+    D.Free;
+  end;
+end;
+
 procedure TTestExceptionSink.HandleException(Sender: TObject; E: Exception);
 begin
   Writeln('FAIL (VCL): ' + E.ClassName + ': ' + E.Message);
   Halt(1);
 end;
+
+procedure CheckRouteGapTolerance;
+var D:TVectArtDocument; H:TVectArtEditHistory; Data:TVectArtPathData;
+  Route:TMapRakuRouteProgressData; Error,Before:string;
+  P,T:TPointF; Path:TVectArtPathLayer; V:TArray<TMapRakuVertex>;
+begin
+  D:=TVectArtDocument.Create; H:=TVectArtEditHistory.Create;
+  try
+    Data:=Road('route',PointF(-100,0),PointF(0,0)); Data.RouteId:='gap-test';
+    D.InsertPath(1,Data);
+    Data:=Road('route',PointF(8,0),PointF(100,0)); Data.RouteId:='gap-test';
+    D.InsertPath(2,Data);
+    PlaceMapSymbol(D,H,10,'start',PointF(-100,0),True);
+    PlaceMapSymbol(D,H,11,'end',PointF(100,0),True);
+    Before:=SerializeVectArtDocument(D);
+    Check(TryBuildMapRakuRoute(D,'gap-test',Route,Error),'8px gap must connect: '+Error);
+    Check(Length(Route.Samples)=4,'Both sides of gap must remain in the samples');
+    Check(TryMapRakuRoutePosition(Route,52,P,T,Path) and (Abs(P.X-4)<0.001),
+      'Preview interpolates smoothly across the gap');
+    Check(SerializeVectArtDocument(D)=Before,'Route gap tolerance never changes document');
+    V:=TVectArtPathLayer(D[2]).Vertices; V[0].Position:=PointF(12,0);
+    TVectArtPathLayer(D[2]).Vertices:=V;
+    Check(TryBuildMapRakuRoute(D,'gap-test',Route,Error),'12px boundary connects');
+    V[0].Position:=PointF(12.1,0); TVectArtPathLayer(D[2]).Vertices:=V;
+    Check(not TryBuildMapRakuRoute(D,'gap-test',Route,Error),'Distant paths stay disconnected');
+    // 遠い候補を先に並べても、後にある完全一致の区間を優先する。
+    V[0].Position:=PointF(4,0); TVectArtPathLayer(D[2]).Vertices:=V;
+    Data:=Road('route',PointF(0,0),PointF(100,0)); Data.RouteId:='gap-test';
+    D.InsertPath(D.LayerCount,Data);
+    Path:=TVectArtPathLayer(D[D.LayerCount-1]);
+    Check(TryBuildMapRakuRoute(D,'gap-test',Route,Error),'Multiple nearby candidates');
+    Check(Route.Samples[High(Route.Samples)].Path=Path,'Exact endpoint beats earlier nearby path');
+    Writeln('PASS: route gaps, 12px boundary, interpolation, nearest-first, no document changes');
+  finally H.Free; D.Free; end;
+end;
+procedure CheckRouteFollowing;
+const Kinds: array[0..3] of string = ('road','jr','rail','river');
+var D: TVectArtDocument; S: TVectArtEditorState; H: TVectArtEditHistory;
+  Creation: TVectArtShapeCreation; Data: TVectArtPathData;
+  Source, Route: TVectArtPathLayer; Kind: string;
+  Original, Section, Created: TArray<TMapRakuVertex>; A,B: TMapRakuRouteSnap;
+  Preview: TArray<TPoint>; P,Q: TPointF; I,Direction: Integer; FoundCorner: Boolean;
+  function CurvePoint(const V: TArray<TMapRakuVertex>; T: Single): TPointF;
+  var U: Single;
+  begin
+    U:=1-T;
+    Result:=V[0].Position*(U*U*U)+
+      (V[0].Position+V[0].OutgoingControl)*(3*U*U*T)+
+      (V[1].Position+V[1].IncomingControl)*(3*U*T*T)+V[1].Position*(T*T*T);
+  end;
+begin
+  // 部分ベジェを近似折れ線にせず、同じ曲線として切り出す。
+  Data:=Road('road',PointF(-100,0),PointF(100,0));
+  Data.Vertices[0].OutgoingSegment:=slskCubicBezier;
+  Data.Vertices[0].Kind:=slvkBezier; Data.Vertices[1].Kind:=slvkBezier;
+  Data.Vertices[0].OutgoingControl:=PointF(40,120);
+  Data.Vertices[1].IncomingControl:=PointF(-40,120);
+  A:=Default(TMapRakuRouteSnap); A.PathId:='curve'; A.Vertices:=Data.Vertices;
+  A.Parameter:=0.25; A.Point:=CurvePoint(A.Vertices,A.Parameter);
+  B:=A; B.Parameter:=0.75; B.Point:=CurvePoint(B.Vertices,B.Parameter);
+  for Direction:=0 to 1 do
+  begin
+    if Direction=0 then Section:=MapRouteSection(A,B) else Section:=MapRouteSection(B,A);
+    Check((Length(Section)=2) and (Section[0].OutgoingSegment=slskCubicBezier),
+      'Following retains a partial cubic segment');
+    for I:=0 to 20 do
+    begin
+      P:=CurvePoint(Section,I/20);
+      if Direction=0 then Q:=CurvePoint(Data.Vertices,0.25+0.5*I/20)
+      else Q:=CurvePoint(Data.Vertices,0.75-0.5*I/20);
+      Check(Hypot(P.X-Q.X,P.Y-Q.Y)<0.001,'Partial/reversed cubic must preserve geometry');
+    end;
+  end;
+  B.PathId:='another-road';
+  Check(Length(MapRouteSection(A,B))=0,'Different paths do not auto-follow');
+  for Kind in Kinds do
+  begin
+    D:=TVectArtDocument.Create; S:=TVectArtEditorState.Create;
+    H:=TVectArtEditHistory.Create; Creation:=TVectArtShapeCreation.Create;
+    try
+      D.CanvasLayer.Width:=800; D.CanvasLayer.Height:=600;
+      Data:=Road(Kind,PointF(-100,-100),PointF(100,-100));
+      SetLength(Data.Vertices,3);
+      Data.Vertices[1].Position:=PointF(0,100);
+      Data.Vertices[2].Position:=PointF(100,-100);
+      D.InsertPath(1,Data); Source:=TVectArtPathLayer(D[1]);
+      Original:=CloneMapRakuPathVertices(Source.Vertices);
+      for Direction:=0 to 1 do
+      begin
+        S.MapElement:='route'; S.CurrentTool:=vetPath; S.NextVertexKind:=slvkSharp;
+        Creation.Configure(D,H,S,Rect(0,0,800,600),1);
+        if Direction=0 then
+        begin
+          Creation.MouseDown(mbLeft,[],300,200);
+          Creation.MouseMove([],500,200);
+        end
+        else begin
+          Creation.MouseDown(mbLeft,[],500,200);
+          Creation.MouseMove([],300,200);
+        end;
+        Check(Creation.PreviewPath(Preview),'Following preview exists');
+        FoundCorner:=False;
+        for I:=0 to High(Preview) do
+          if (Preview[I].X=400) and (Preview[I].Y=400) then FoundCorner:=True;
+        Check(FoundCorner,'Preview follows intermediate road corner');
+        if Direction=0 then Creation.MouseDown(mbLeft,[],500,200)
+        else Creation.MouseDown(mbLeft,[],300,200);
+        Check(Creation.FinishPath(False),'Finish following route');
+        Route:=TVectArtPathLayer(D[2]);
+        Check((Length(Route.Vertices)=3) and
+          (Route.Vertices[1].Position=PointF(0,100)),Kind+': route follows source corner');
+        Check(MapRakuPathVerticesEqual(Source.Vertices,Original),'Source remains unchanged');
+        Created:=CloneMapRakuPathVertices(Route.Vertices);
+        H.Undo; Check(D.LayerCount=2,'Following route undone in one operation');
+        H.Redo; Check(D.LayerCount=3,'Following route redo');
+        Check(MapRakuPathVerticesEqual(TVectArtPathLayer(D[2]).Vertices,Created),
+          'Redo restores following geometry');
+        H.Undo;
+      end;
+      S.MapElement:='route'; S.CurrentTool:=vetPath;
+      Creation.Configure(D,H,S,Rect(0,0,800,600),1);
+      Creation.MouseDown(mbLeft,[],300,200);
+      Creation.MouseMove([ssAlt],500,200);
+      Check(Creation.PreviewPath(Preview),'Alt preview exists');
+      Check(Length(Preview)=2,'Alt preview is free straight segment');
+      Creation.MouseDown(mbLeft,[ssAlt],500,200);
+      Creation.FinishPath(False);
+      Check(Length(TVectArtPathLayer(D[2]).Vertices)=2,'Alt disables following');
+      H.Undo;
+      Data:=Road(Kind,PointF(-100,0),PointF(100,0));
+      Data.Vertices[0].OutgoingSegment:=slskCubicBezier;
+      Data.Vertices[0].Kind:=slvkBezier; Data.Vertices[1].Kind:=slvkBezier;
+      Data.Vertices[0].OutgoingControl:=PointF(40,120);
+      Data.Vertices[1].IncomingControl:=PointF(-40,120);
+      Source.Vertices:=Data.Vertices;
+      Creation.MouseDown(mbLeft,[],300,300);
+      Creation.MouseDown(mbLeft,[],400,390);
+      Creation.MouseMove([],500,300);
+      Check(Creation.PreviewPath(Preview) and (Length(Preview)>3),
+        'Cubic following preview includes the actual curve');
+      Creation.MouseDown(mbLeft,[],500,300);
+      Check(Creation.FinishPath(False),'Finish multi-click cubic following');
+      Route:=TVectArtPathLayer(D[2]);
+      Check((Length(Route.Vertices)=3) and
+        (Route.Vertices[0].OutgoingSegment=slskCubicBezier) and
+        (Route.Vertices[1].OutgoingSegment=slskCubicBezier),
+        'Successive snapped clicks retain split cubic segments');
+      for P in FlattenMapRakuPathVertices(Route.Vertices,32) do
+        Check(MapRakuPathDistanceToPoint(Data.Vertices,P)<0.5,
+          'Created cubic route follows source');
+      H.Undo;
+      D.InsertPath(2,Road(Kind,PointF(-100,-180),PointF(100,-180)));
+      Creation.MouseDown(mbLeft,[],300,300);
+      Creation.MouseDown(mbLeft,[],500,120);
+      Creation.FinishPath(False);
+      Check((Length(TVectArtPathLayer(D[3]).Vertices)=2) and
+        (TVectArtPathLayer(D[3]).Vertices[0].OutgoingSegment=slskLine),
+        'Switching target objects uses normal route drawing');
+    finally Creation.Free; H.Free; S.Free; D.Free; end;
+  end;
+  Writeln('PASS: route following, exact partial/reversed cubic, preview, four kinds, Alt, Undo/Redo');
+end;
+
+procedure CheckRouteSnapping;
+const Kinds: array[0..3] of string = ('road','jr','rail','river');
+var D: TVectArtDocument; S: TVectArtEditorState; H: TVectArtEditHistory;
+  Editor: TMapPathEditor; Creation: TVectArtShapeCreation;
+  Data: TVectArtPathData; Target, Route: TVectArtPathLayer;
+  P: TPointF; Kind: string;
+begin
+  for Kind in Kinds do
+  begin
+    D:=TVectArtDocument.Create; S:=TVectArtEditorState.Create;
+    H:=TVectArtEditHistory.Create; Editor:=TMapPathEditor.Create;
+    Creation:=TVectArtShapeCreation.Create;
+    try
+      D.CanvasLayer.Width:=800; D.CanvasLayer.Height:=600;
+      D.InsertPath(1,Road(Kind,PointF(-200,0),PointF(200,0)));
+      Target:=TVectArtPathLayer(D[1]); Target.Locked:=True;
+      Check(NearestMapRouteTarget(D,PointF(0,20),1,P) and (Abs(P.Y)<0.01),
+        Kind+': route snaps to locked target centerline');
+      Check(not NearestMapRouteTarget(D,PointF(0,25),1,P), 'Route snap limit');
+      Check(NearestMapRouteTarget(D,PointF(0,40),0.5,P), 'Route snap zoom out');
+      Check(not NearestMapRouteTarget(D,PointF(0,13),2,P), 'Route snap zoom in');
+      Target.Visible:=False;
+      Check(not NearestMapRouteTarget(D,PointF(0,10),1,P), 'Hidden target excluded');
+      Target.Visible:=True; Target.Opacity:=0;
+      Check(not NearestMapRouteTarget(D,PointF(0,10),1,P), 'Transparent target excluded');
+      Target.Opacity:=1;
+      Data:=Road(Kind,PointF(-200,0),PointF(200,0));
+      Data.Vertices[0].Kind:=slvkBezier;
+      Data.Vertices[1].Kind:=slvkBezier;
+      Data.Vertices[0].OutgoingSegment:=slskCubicBezier;
+      Data.Vertices[0].OutgoingControl:=PointF(133,80);
+      Data.Vertices[1].IncomingControl:=PointF(-133,80);
+      Target.Vertices:=Data.Vertices;
+      Check(NearestMapRouteTarget(D,PointF(0,78),1,P) and
+        (Abs(P.X)<1) and (Abs(P.Y-60)<1),'Route snaps to curved centerline');
+      Data:=Road(Kind,PointF(-200,0),PointF(200,0));
+      Target.Vertices:=Data.Vertices;
+      S.MapElement:='route'; S.CurrentTool:=vetLine;
+      Creation.Configure(D,H,S,Rect(0,0,800,600),1);
+      Creation.MouseDown(mbLeft,[],350,320);
+      Creation.MouseUp(mbLeft,[],450,320);
+      Check(D.LayerCount=3,'Route created');
+      Route:=TVectArtPathLayer(D[2]);
+      Check((Abs(Route.Vertices[0].Position.Y)<0.01) and
+        (Abs(Route.Vertices[1].Position.Y)<0.01),'Created route follows centerline');
+      D.SelectedIndex:=2; S.CurrentTool:=vetSelect;
+      Editor.Configure(D,S,H,Rect(0,0,800,600),1);
+      Check(Editor.MouseDown(mbLeft,[],450,300),'Pick route endpoint');
+      Editor.MouseMove([],500,320); Editor.MouseUp;
+      Check(Abs(Route.Vertices[1].Position.Y)<0.01,'Dragged route snaps');
+      H.Undo;
+      Check(Abs(Route.Vertices[1].Position.X-50)<0.01,'Route snap undo');
+      Editor.Configure(D,S,H,Rect(0,0,800,600),1);
+      Check(Editor.MouseDown(mbLeft,[],450,300),'Pick route for Alt drag');
+      Editor.MouseMove([ssAlt],500,320); Editor.MouseUp;
+      Check(Abs(Route.Vertices[1].Position.Y-20)<0.01,'Alt bypasses route snap');
+      Check((Target.Vertices[0].Position.X=-200) and
+        (Target.Vertices[1].Position.X=200),'Route snapping never edits target');
+      Target.Visible:=False;
+      Check(not NearestMapRouteTarget(D,PointF(0,0),1,P),'Other routes excluded');
+    finally
+      Creation.Free; Editor.Free; H.Free; S.Free; D.Free;
+    end;
+  end;
+  Writeln('PASS: route centerline snapping, four target kinds, zoom, visibility, Alt, creation, drag, Undo');
+end;
+
+procedure CheckPresetThumbnailOrientation;
+var Layer: TMapRakuGroupLayer; Buffer: TVectArtRenderBuffer;
+  Bitmap: TBitmap; Pixel: TVectArtRgbaPixel; Expected: TColor;
+  Symbol, X, Y: Integer; A: Cardinal;
+begin
+  Buffer := TVectArtRenderBuffer.Create;
+  try
+    for Symbol := 0 to 9 do
+    begin
+      Layer := CreateMapSymbol(Symbol, MapSymbolDefaultLabel(Symbol));
+      try
+        RenderVectArtLayerThumbnail(Layer, Buffer, 64, 42);
+        Bitmap := CreateMapPresetThumbnail(Layer, 64, 42, clWhite);
+        try
+          for Y := 0 to 41 do
+            for X := 0 to 63 do
+            begin
+              Pixel := Buffer.Pixels[Y * 64 + X];
+              A := Pixel.A;
+              Expected := ((Cardinal(Pixel.R)*A + 255*(255-A) + 127) div 255) or
+                (((Cardinal(Pixel.G)*A + 255*(255-A) + 127) div 255) shl 8) or
+                (((Cardinal(Pixel.B)*A + 255*(255-A) + 127) div 255) shl 16);
+              Check(ColorToRGB(Bitmap.Canvas.Pixels[X,Y]) = Expected,
+                Format('Symbol %d thumbnail orientation at %d,%d', [Symbol,X,Y]));
+            end;
+        finally Bitmap.Free; end;
+      finally Layer.Free; end;
+    end;
+    Writeln('PASS: all symbol thumbnails match renderer orientation and colors');
+  finally Buffer.Free; end;
+end;
+
+procedure CheckRiverLineCaps;
+var D: TVectArtDocument; B: TVectArtRenderBuffer; Data: TVectArtPathData;
+  Cap: TVectArtLineCap; Info: TSkImageInfo; Image: ISkImage;
+  Svg: ISkSVGDOM; Surface: ISkSurface; FileName: string;
+  procedure CheckPixels(const Output: string);
+  var X: Integer;
+  begin
+    Check((B.Pixels[100*300+150].A>=126) and
+      (B.Pixels[100*300+150].A<=129), Output+': river opacity');
+    for X in [62, 237] do
+      Check((B.Pixels[82*300+X].A>100) = (Cap=vlcSquare),
+        Output+': square river cap corners');
+    for X in [66, 233] do
+      Check((B.Pixels[90*300+X].A>100) = (Cap<>vlcTriangle),
+        Output+': round versus triangular river cap');
+    for X in [65, 234] do
+      Check(B.Pixels[100*300+X].A>100, Output+': river cap tip');
+  end;
+begin
+  D:=TVectArtDocument.Create; B:=TVectArtRenderBuffer.Create;
+  try
+    D.CanvasLayer.Width:=300; D.CanvasLayer.Height:=200;
+    D.CanvasLayer.Transparent:=True;
+    Data:=Road('river', PointF(-70,0), PointF(70,0));
+    Data.StrokeWidth:=40; Data.Opacity:=0.5;
+    D.InsertPath(1,Data);
+    B.SetSize(300,200);
+    Info:=TSkImageInfo.Create(300,200,TSkColorType.RGBA8888,TSkAlphaType.Unpremul);
+    for Cap:=Low(TVectArtLineCap) to High(TVectArtLineCap) do
+    begin
+      TVectArtPathLayer(D[1]).LineCap:=Cap;
+      RenderVectArtDocument(D,B,300,200); CheckPixels('screen');
+      FileName:='TestOutput/river-cap-'+IntToStr(Ord(Cap));
+      ExportMapPng(D,FileName+'.png'); ExportMapSvg(D,FileName+'.svg');
+      Image:=TSkImage.MakeFromEncodedFile(FileName+'.png');
+      Check(Image.ReadPixels(Info,B.Data,B.Stride),'Read river PNG');
+      CheckPixels('PNG');
+      Svg:=TSkSVGDOM.MakeFromFile(FileName+'.svg');
+      Surface:=TSkSurface.MakeRaster(300,200);
+      Surface.Canvas.Clear(TAlphaColorRec.Null); Svg.Render(Surface.Canvas);
+      Check(Surface.ReadPixels(Info,B.Data,B.Stride),'Read river SVG');
+      CheckPixels('SVG');
+    end;
+    Writeln('PASS: river square/round/triangle caps, both endpoints, opacity, screen/PNG/SVG');
+  finally
+    B.Free; D.Free;
+  end;
+end;
+
 procedure RunMapTests;
 var D, Restored, CrossingDoc, ColorDoc, ColorRestored, PaletteDoc: TVectArtDocument; H, LocalHistory: TVectArtEditHistory; S: TVectArtEditorState;
   R: TVectArtPathData; J, E: string;
@@ -62,6 +465,12 @@ begin
   Application.OnException := ExceptionSink.HandleException;
   TTextRendererSkiaRuntime.Acquire(BundledSkiaRuntimeFileName);
   TDirectory.CreateDirectory('TestOutput');
+  CheckContextMenuSelection;
+  CheckRiverLineCaps;
+  CheckPresetThumbnailOrientation;
+  CheckRouteSnapping;
+  CheckRouteFollowing;
+  CheckRouteGapTolerance;
   RecentIni := TPath.GetFullPath('TestOutput/recent-files-test.ini');
   RecentFiles := TMapRakuRecentFiles.Create;
   ReloadedRecentFiles := TMapRakuRecentFiles.Create;

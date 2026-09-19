@@ -272,9 +272,9 @@ begin
   end;
   // ショートカットと同じ既存コマンドへ接続し、メニュー固有の編集処理は持たせない。
   GroupBuilder := FBuilder.AddSubMenu('グループ');
-  GroupBuilder.AddItem('グループ化', 'Ctrl+G', GroupObjectClick,
+  GroupBuilder.AddItem('作成', 'Ctrl+G', GroupObjectClick,
     CanGroupCurrentSelection(FDocument, FEditorState)).Tag := 1;
-  GroupBuilder.AddItem('グループ化解除', 'Ctrl+Shift+G', GroupObjectClick,
+  GroupBuilder.AddItem('解除', 'Ctrl+Shift+G', GroupObjectClick,
     CanUngroupCurrentSelection(FDocument, FEditorState)).Tag := 2;
   DetachEnabled := (FEditorState <> nil) and
     (FEditorState.OpenGroup <> nil) and

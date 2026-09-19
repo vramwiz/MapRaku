@@ -14,6 +14,7 @@ type
     TotalLength: Single;
   end;
 
+procedure WriteMapRakuRouteDiagnostic(Document: TVectArtDocument; const RouteId, ErrorText: string);
 function MapRakuRouteIdentifier(Path: TVectArtPathLayer): string;
 function TryBuildMapRakuRoute(Document: TVectArtDocument; const RouteId: string;
   out Route: TMapRakuRouteProgressData; out ErrorText: string): Boolean;
@@ -21,10 +22,44 @@ function TryMapRakuRoutePosition(const Route: TMapRakuRouteProgressData;
   ProgressPercent: Single; out Position, Tangent: TPointF;
   out Path: TVectArtPathLayer): Boolean;
 implementation
-uses System.Math, System.SysUtils, MapRakuLayerGeometry, MapRakuPathOperations;
+uses System.Math, System.SysUtils, MapRakuLayerGeometry, MapRakuPathOperations
+{$IFDEF DEBUG}
+  , System.IOUtils, Winapi.Windows, MapRakuDocumentJson
+{$ENDIF};
 const
-  ROUTE_ENDPOINT_TOLERANCE = 1.0;
+  // 地図座標の12px以内を接続とみなす。表示倍率には依存しない。
+  ROUTE_ENDPOINT_TOLERANCE = 12.0;
 
+procedure WriteMapRakuRouteDiagnostic(Document: TVectArtDocument; const RouteId, ErrorText: string);
+{$IFDEF DEBUG}
+var Text: string; I: Integer; Path: TVectArtPathLayer;
+{$ENDIF}
+begin
+{$IFDEF DEBUG}
+  if Document=nil then Exit;
+  try
+    Text:=FormatDateTime('yyyy-mm-dd hh:nn:ss.zzz ',Now)+
+      Format('DEBUG pid=%d route=%s tolerance=%.3f result=%s',
+        [GetCurrentProcessId,RouteId,ROUTE_ENDPOINT_TOLERANCE,ErrorText])+sLineBreak;
+    for I:=1 to Document.LayerCount-1 do
+      if Document[I] is TVectArtPathLayer then
+      begin
+        Path:=TVectArtPathLayer(Document[I]);
+        if Path.MapElement='route' then
+          Text:=Text+Format('path=%s routeId=%s vertices=%d closed=%s',
+            [Path.PersistentId,MapRakuRouteIdentifier(Path),Length(Path.Vertices),
+             BoolToStr(Path.Closed,True)])+sLineBreak;
+      end;
+    TFile.AppendAllText(TPath.Combine(TPath.GetTempPath,'MapRakuRouteDiagnostic.log'),Text,TEncoding.UTF8);
+    TFile.WriteAllText(TPath.Combine(TPath.GetTempPath,
+      Format('MapRakuRouteDiagnostic-%d.mapraku',[GetCurrentProcessId])),
+      SerializeVectArtDocument(Document),TEncoding.UTF8);
+    OutputDebugString(PChar(Text));
+  except
+    // 診断ファイルの書き込み失敗で編集を止めない。
+  end;
+{$ENDIF}
+end;
 function MapRakuRouteIdentifier(Path: TVectArtPathLayer): string;
 begin
   if Path.RouteId<>'' then Result:=Path.RouteId else Result:=Path.PersistentId;
@@ -65,7 +100,7 @@ begin
   for I:=0 to High(Points) do begin
     Points[I]:=Path.Transform.Map(Points[I]);
     if (Length(Route.Samples)>0) and (I=0) and
-       (Distance(Route.Samples[High(Route.Samples)].Position,Points[I])<=ROUTE_ENDPOINT_TOLERANCE) then
+       (Distance(Route.Samples[High(Route.Samples)].Position,Points[I])<=1E-6) then
       Continue;
     Sample.Position:=Points[I]; Sample.Tangent:=PointF(0,0); Sample.Path:=Path;
     Route.Samples:=Route.Samples+[Sample];
@@ -83,30 +118,36 @@ var Paths,AllPaths:TArray<TVectArtPathLayer>; Used:TArray<Boolean>; StartMarker,
   var Direction:TPointF;
   begin Path.TryEndpoint(Index,Result,Direction); end;
   function FindTraversal(const Position:TPointF; UsedCount:Integer):Boolean;
-  var K,E:Integer; P,NextPosition:TPointF;
+  var K,E,N,L,Code:Integer; P,NextPosition:TPointF; Gap:Single;
+    Candidates:TArray<Integer>; Gaps:TArray<Single>;
   begin
-    // 区間は作成時に端点スナップされる。その接続だけを辿り、終了マーカーに
-    // 到達した時点で確定する。同じ論理IDでも、終点後へ延長した線は別経路として
-    // プレビューには含めない。
     if (UsedCount>0) and (Distance(Position,EndPoint)<=ROUTE_ENDPOINT_TOLERANCE) then
       Exit(True);
+    // 完全一致を含む近い端点から探索し、行き止まりの場合だけ次候補へ戻る。
     for K:=0 to High(Paths) do begin
       if Used[K] then Continue;
       for E:=0 to 1 do begin
         if E=0 then P:=PathEndpoint(Paths[K],0)
         else P:=PathEndpoint(Paths[K],High(Paths[K].Vertices));
-        if Distance(P,Position)<=ROUTE_ENDPOINT_TOLERANCE then begin
-          Used[K]:=True;
-          if E=0 then NextPosition:=PathEndpoint(Paths[K],High(Paths[K].Vertices))
-          else NextPosition:=PathEndpoint(Paths[K],0);
-          if FindTraversal(NextPosition,UsedCount+1) then begin
-            TraversalPaths:=TraversalPaths+[K];
-            TraversalEndpoints:=TraversalEndpoints+[E];
-            Exit(True);
-          end;
-          Used[K]:=False;
+        Gap:=Distance(P,Position);
+        if Gap>ROUTE_ENDPOINT_TOLERANCE then Continue;
+        N:=Length(Candidates); SetLength(Candidates,N+1); SetLength(Gaps,N+1);
+        while (N>0) and (Gaps[N-1]>Gap) do begin
+          Candidates[N]:=Candidates[N-1]; Gaps[N]:=Gaps[N-1]; Dec(N);
         end;
+        Candidates[N]:=K*2+E; Gaps[N]:=Gap;
       end;
+    end;
+    for L:=0 to High(Candidates) do begin
+      Code:=Candidates[L]; K:=Code div 2; E:=Code mod 2;
+      Used[K]:=True;
+      if E=0 then NextPosition:=PathEndpoint(Paths[K],High(Paths[K].Vertices))
+      else NextPosition:=PathEndpoint(Paths[K],0);
+      if FindTraversal(NextPosition,UsedCount+1) then begin
+        TraversalPaths:=TraversalPaths+[K]; TraversalEndpoints:=TraversalEndpoints+[E];
+        Exit(True);
+      end;
+      Used[K]:=False;
     end;
     Result:=False;
   end;
@@ -162,7 +203,7 @@ begin
   if (EndMarker=nil) or not MarkerPosition(EndMarker,EndPoint) then begin ErrorText:='終了点がありません'; Exit; end;
   SetLength(Used,Length(Paths));
   if not FindTraversal(StartPoint,0) then begin
-    ErrorText:=Format('開始点%sから終了点%sまで、端点スナップによる接続がありません / 区間[%s]',
+    ErrorText:=Format('開始点%sから終了点%sまで、12px以内でつながる端点がありません / 区間[%s]',
       [PointText(StartPoint),PointText(EndPoint),RemainingPathsText]);
     Exit;
   end;

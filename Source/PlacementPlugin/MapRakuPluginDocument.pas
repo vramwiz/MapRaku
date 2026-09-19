@@ -30,12 +30,18 @@ begin
     Exit(False);
   end;
   if SerializedData <> '' then
-    Exit(TryDeserializeVectArtDocument(SerializedData, Document,
-      ErrorMessage));
+  begin
+    Result := TryDeserializeVectArtDocument(SerializedData, Document,
+      ErrorMessage);
+    if Result then Document.CanvasLayer.Transparent := True;
+    Exit;
+  end;
   if (OutputWidth > 0) and (OutputHeight > 0) and
     (OutputWidth <= MAX_PLUGIN_CANVAS_DIMENSION) and
     (OutputHeight <= MAX_PLUGIN_CANVAS_DIMENSION) then
     Document.SetCanvasSize(OutputWidth, OutputHeight);
+  // ホスト映像を編集画面の下地に表示し、空の地図を白く見せない。
+  Document.CanvasLayer.Transparent := True;
   Result := True;
 end;
 

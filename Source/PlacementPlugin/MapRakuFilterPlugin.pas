@@ -36,7 +36,8 @@ function GetModuleHandleExW(Flags: DWORD; ModuleName: PWideChar;
 var
   EditButton: TFILTER_ITEM_BUTTON;
   ProgressItem, MarkerScaleItem, MarkerTransparencyItem, MarkerUnderpassTransparencyItem, MarkerOffsetXItem,
-    MarkerOffsetYItem, RotationCorrectionItem, DisplayWidthItem,
+    MarkerOffsetYItem, RotationCorrectionItem, DisplayXItem, DisplayYItem,
+    DisplayScaleItem, DisplayWidthItem,
     DisplayHeightItem, ScrollStartItem, AnimationAmountItem,
     AnimationSpeedItem, AnimationAuxItem, PointerSizeItem: TFILTER_ITEM_TRACK;
   MarkerFileItem: TFILTER_ITEM_FILE;
@@ -177,6 +178,9 @@ begin
         Motion.RotationCorrection := RotationCorrectionItem.Value;
         Motion.RouteDisplay := RouteDisplayItem.Value;
         Motion.RouteColor := GetColor(RouteColorItem);
+        Motion.DisplayX := DisplayXItem.Value;
+        Motion.DisplayY := DisplayYItem.Value;
+        Motion.DisplayScale := DisplayScaleItem.Value;
         Motion.DisplayWidth := DisplayWidthItem.Value;
         Motion.DisplayHeight := DisplayHeightItem.Value;
         Motion.ScrollStartRate := ScrollStartItem.Value;
@@ -236,6 +240,11 @@ begin
   begin
     AddButton(EditButton, '編集', EditButtonCallback);
     AddTrack(ProgressItem, '進行位置', 0, 0, 100, 0.01);
+    AddTrack(DisplayXItem, 'X', 0, -16384, 16384, 1);
+    AddTrack(DisplayYItem, 'Y', 0, -16384, 16384, 1);
+    AddTrack(DisplayScaleItem, '表示拡大率', 100, 10, 400, 1);
+    AddTrack(DisplayWidthItem, '表示幅', 1920, 1, 16384, 1);
+    AddTrack(DisplayHeightItem, '表示高さ', 1080, 1, 16384, 1);
     AddSelectList(RouteDisplayList, 'なし', 0);
     AddSelectList(RouteDisplayList, '軌跡', 1);
     AddSelect(RouteDisplayItem, 'ルート', 0, @RouteDisplayList[0]);
@@ -269,8 +278,6 @@ begin
     AddSelect(PointerKindItem, 'ポインターの種類', 0, @PointerKindList[0]);
     AddColor(PointerColorItem, 'ポインター色', $00000000);
     AddTrack(PointerSizeItem, 'ポインターサイズ', 10, 1, 100, 1);
-    AddTrack(DisplayWidthItem, '表示幅', 1920, 1, 16384, 1);
-    AddTrack(DisplayHeightItem, '表示高さ', 1080, 1, 16384, 1);
     AddTrack(ScrollStartItem, 'スクロール開始率', 25, 0, 50, 1);
     // 頻繁に触らない補助設定は表示関連の後、内部JSONの直前へまとめる。
     AddGroup(AnimationGroupItem, 'アニメーション', 0);

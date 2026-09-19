@@ -281,6 +281,7 @@ var
 begin
   if (Button = mbRight) and (FDocument <> nil) then
   begin
+    FSelection.ResetClick;
     SyncRendererContext;
     Index := FRenderer.LayerIndexAt(LayerBounds, Y);
     if Index > 0 then
@@ -290,7 +291,8 @@ begin
       SourceIndex := FRenderer.LayerSourceIndexAt(Index);
       FSelection.SelectLayer(FDocument, FEditorState, Parent, Layer,
         SourceIndex, []);
-      FSelection.CompleteClick(Layer, SourceIndex);
+      // 右クリックはメニュー対象の選択だけを行い、複数選択を単一行へ確定しない。
+      FSelection.ResetClick;
       Invalidate;
     end;
     if Assigned(FOnObjectContextMenu) then

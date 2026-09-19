@@ -182,6 +182,8 @@ uses
 begin
   try
     Application.Initialize;
-    RunMapTests;
+    if (ParamCount=2) and (ParamStr(1)='-route-diagnostic') then
+      RunRouteDiagnostic(ParamStr(2))
+    else RunMapTests;
   except on E: Exception do begin Writeln('FAIL: ' + E.Message); Halt(1); end; end;
 end.

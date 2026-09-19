@@ -32,7 +32,8 @@ begin
     Pixel := Buffer.Data;
     for Y := 0 to Height - 1 do
     begin
-      Destination := Result.ScanLine[Height - 1 - Y];
+      // ScanLineの行番号は表示上の上端が0。レンダラーと同じ順序で転送する。
+      Destination := Result.ScanLine[Y];
       for X := 0 to Width - 1 do
       begin
         Alpha := Pixel^.A;

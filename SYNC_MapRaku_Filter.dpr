@@ -8,6 +8,7 @@ uses
   MapRakuFilterPlugin in 'Source\PlacementPlugin\MapRakuFilterPlugin.pas',
   MapRakuFilterContext in 'Source\PlacementPlugin\MapRakuFilterContext.pas',
   MapRakuPluginRouteMarker in 'Source\PlacementPlugin\MapRakuPluginRouteMarker.pas',
+  MapRakuPluginViewport in 'Source\PlacementPlugin\MapRakuPluginViewport.pas',
   MapRakuPluginDocument in 'Source\PlacementPlugin\MapRakuPluginDocument.pas',
   MapRakuEditorHost in 'Source\PlacementPlugin\MapRakuEditorHost.pas',
   MapRakuFrameCapture in 'Source\PlacementPlugin\MapRakuFrameCapture.pas',

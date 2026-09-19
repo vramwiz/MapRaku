@@ -238,6 +238,12 @@ begin
   else if FHandle=2 then V[FVertex].OutgoingControl:=P-V[FVertex].Position
   else begin
     if not (ssAlt in Shift) then begin
+      if (FLayer.MapElement='route') and
+        NearestMapRouteTarget(FDocument,P,FZoom,Snapped,FLayer) then
+      begin
+        V[FVertex].Position:=Snapped;
+        FLayer.Vertices:=V; FDocument.Changed; Exit(True);
+      end;
       if FLayer.IsEndpoint(FVertex) and
         NearestMapEndpoint(FDocument,P,MAP_PATH_ENDPOINT_SNAP_PIXELS/FZoom,
           False,FLayer.ConnectionFamily,Endpoint,FLayer) then begin

@@ -3,7 +3,8 @@ $ErrorActionPreference = 'Stop'
 $packageName = 'SYNC_MapRaku'
 $projectDir = Split-Path -Parent $PSScriptRoot
 $releaseDir = Join-Path $projectDir 'Win64\Plugin\Release'
-$workDir = Join-Path $PSScriptRoot $packageName
+$stagingDir = Join-Path $PSScriptRoot '.release-staging'
+$workDir = Join-Path $stagingDir $packageName
 $zipFile = Join-Path $PSScriptRoot "$packageName.zip"
 
 $packageFiles = @(
@@ -26,6 +27,16 @@ $packageFiles = @(
     Source = Join-Path $projectDir 'Docs\PLUGIN.md'
     Destination = 'Docs\PLUGIN.md'
     Description = 'plugin guide'
+  },
+  @{
+    Source = Join-Path $projectDir 'Docs\AI_PIPE.md'
+    Destination = 'Docs\AI_PIPE.md'
+    Description = 'AI pipe guide'
+  },
+  @{
+    Source = Join-Path $projectDir 'Tools\Automation\MapRakuPipe.psm1'
+    Destination = 'Tools\Automation\MapRakuPipe.psm1'
+    Description = 'AI pipe client module'
   }
 )
 
@@ -38,9 +49,9 @@ foreach ($item in $packageFiles) {
   }
 }
 
-# Cleanup is restricted to the known staging directory under Setup so this
-# release helper cannot remove a path supplied from outside the project.
-$expectedWorkDir = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $packageName))
+# Cleanup is restricted to the generated staging directory under Setup; the
+# checked-in Setup/SYNC_MapRaku files are never used as temporary output.
+$expectedWorkDir = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '.release-staging\SYNC_MapRaku'))
 if ([IO.Path]::GetFullPath($workDir) -ne $expectedWorkDir) {
   throw 'Unexpected package staging directory.'
 }

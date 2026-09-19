@@ -1633,6 +1633,7 @@ begin
   RoutePreviewDebug('preview build: route='+RouteId);
   if not TryBuildMapRakuRoute(FDocument,RouteId,FRoutePreviewData,ErrorText) then begin
     RoutePreviewDebug('preview build failed: '+ErrorText);
+    WriteMapRakuRouteDiagnostic(FDocument,RouteId,ErrorText);
     Exit(False);
   end;
   FRoutePreviewProgress:=0;

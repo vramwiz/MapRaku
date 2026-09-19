@@ -1,5 +1,5 @@
 ﻿# 実DLLのABIと共通UIを疑似ホストで検証する。AviUtl2本体の操作は行わない。
-param([ValidateSet('Debug','Release')][string]$Config = 'Debug')
+param([ValidateSet('Debug','Release')][string]$Config = 'Debug', [string]$PerformanceFile)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
@@ -11,7 +11,8 @@ $main = @'
 begin
   try
     Application.Initialize;
-    if FindCmdLineSwitch('serve', True) then ServePluginEditor
+    if (ParamCount=2) and (ParamStr(1)='-perf') then RunPluginPerformance(ParamStr(2))
+    else if FindCmdLineSwitch('serve', True) then ServePluginEditor
     else RunPluginTests(ParamStr(1));
   except
     on E: Exception do begin Writeln('FAIL: ' + E.ClassName + ': ' + E.Message); Halt(1); end;
@@ -36,5 +37,9 @@ $buildLine = 'call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.ba
 & $env:ComSpec /d /s /c $buildLine
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Copy-Item -LiteralPath (Join-Path $root 'Lib\Skia\Win64\sk4d.dll') -Destination $output
+if ($PerformanceFile) {
+    & (Join-Path $output 'MapRakuPluginTests.exe') -perf $PerformanceFile
+} else {
 & (Join-Path $output 'MapRakuPluginTests.exe') (Join-Path $root "Win64\Plugin\$Config\SYNC_MapRaku_Filter.auf2") -test
+}
 exit $LASTEXITCODE

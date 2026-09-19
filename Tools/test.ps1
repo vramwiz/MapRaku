@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿param([string]$RouteDiagnosticFile)
+$ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 $enc = [Text.UTF8Encoding]::new($true)
@@ -9,7 +10,9 @@ $main = @'
 begin
   try
     Application.Initialize;
-    RunMapTests;
+    if (ParamCount=2) and (ParamStr(1)='-route-diagnostic') then
+      RunRouteDiagnostic(ParamStr(2))
+    else RunMapTests;
   except on E: Exception do begin Writeln('FAIL: ' + E.Message); Halt(1); end; end;
 end.
 '@
@@ -24,5 +27,9 @@ $buildLine='call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat"
 & $env:ComSpec /d /s /c $buildLine
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Copy-Item Lib/Skia/Win64/sk4d.dll TestOutput
-& ./TestOutput/MapRakuTests.exe -test
+if ($RouteDiagnosticFile) {
+    & ./TestOutput/MapRakuTests.exe -route-diagnostic $RouteDiagnosticFile
+} else {
+    & ./TestOutput/MapRakuTests.exe -test
+}
 exit $LASTEXITCODE

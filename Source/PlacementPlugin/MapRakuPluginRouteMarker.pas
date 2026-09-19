@@ -1,8 +1,9 @@
 ﻿// AviUtl2の進行位置から共通ルートを辿り、内蔵プレビューマーカーをRGBA映像へ描画する。
 unit MapRakuPluginRouteMarker;
 interface
-uses System.Types, System.UITypes, MapRakuDocument, MapRakuRenderBuffer;
+uses System.Types, System.UITypes, MapRakuDocument, MapRakuRenderBuffer, MapRakuRouteProgress;
 type
+  PMapRakuRouteProgressData = ^TMapRakuRouteProgressData;
   TMapRakuPluginRouteMotion = record
     ProgressPercent, MarkerTransparency, MarkerUnderpassTransparency, MarkerScale, MarkerOffsetX, MarkerOffsetY,
       RotationCorrection: Double;
@@ -16,22 +17,23 @@ type
     AnimationAmount, AnimationSpeed, AnimationAux, AnimationTime: Double;
     RouteDisplay: Integer;
     RouteColor: TColor;
-    DisplayWidth, DisplayHeight, ScrollStartRate: Double;
+    DisplayX, DisplayY, DisplayScale, DisplayWidth, DisplayHeight,
+      ScrollStartRate: Double;
     DrawMarker: Boolean;
     MarkerFileName: string;
   end;
 procedure DrawMapRakuPluginRouteLayer(Document: TVectArtDocument;
   Target: TVectArtRenderBuffer; const Motion: TMapRakuPluginRouteMotion;
   LayerIndex: Integer; MarkerImage: TVectArtRenderBuffer;
-  ClipMask: TVectArtRenderBuffer = nil);
+  ClipMask: TVectArtRenderBuffer = nil; RouteCache: PMapRakuRouteProgressData = nil);
 function TryMapRakuPluginRoutePosition(Document: TVectArtDocument;
-  ProgressPercent: Double; out Position: TPointF): Boolean;
+  ProgressPercent: Double; out Position: TPointF; RouteCache: PMapRakuRouteProgressData = nil): Boolean;
 // 基本位置・角度へ揺れ補正を加える。開始／終了位置では必ず補正を0にする。
 procedure ApplyMapRakuPluginMarkerAnimation(
   const Motion: TMapRakuPluginRouteMotion; const BasePosition: TPointF;
   BaseAngle: Single; out Position: TPointF; out Angle: Single);
 implementation
-uses System.Math, Vcl.Graphics, Winapi.Windows, MapRakuRouteProgress, MapRakuCrossingRenderer;
+uses System.Math, Vcl.Graphics, Winapi.Windows, MapRakuCrossingRenderer;
 type
   TRouteRaster = record
     Buffer, Mask: TVectArtRenderBuffer;
@@ -210,13 +212,15 @@ begin
     if Route.Distances[I]>=TargetDistance then Exit;
   end;
 end;
-procedure DrawRouteLayer(Document:TVectArtDocument; Target:TRouteRaster; const Motion:TMapRakuPluginRouteMotion; LayerIndex:Integer; MarkerImage:TVectArtRenderBuffer);
+procedure DrawRouteLayer(Document:TVectArtDocument; Target:TRouteRaster; const Motion:TMapRakuPluginRouteMotion; LayerIndex:Integer; MarkerImage:TVectArtRenderBuffer; RouteCache:PMapRakuRouteProgressData);
 var I:Integer; P,PP:TPointF; T:TPointF; L,Current:TVectArtPathLayer; R:TMapRakuRouteProgressData; E:string; Scale,Angle:Single; Alpha:Byte; A,B,C:TPointF; MarkerRaster:TRouteRaster;
   X,Y:Integer; Pixel:PVectArtRgbaPixel;
 begin
   if (Document=nil)or(Target.Buffer=nil)or(Target.Buffer.Width<=0)or(Target.Buffer.Height<=0)or(Document.CanvasLayer.Width<=0)or(Document.CanvasLayer.Height<=0) then Exit;
-  L:=nil; for I:=0 to Document.LayerCount-1 do if (Document[I] is TVectArtPathLayer)and(TVectArtPathLayer(Document[I]).MapElement='route') then begin L:=TVectArtPathLayer(Document[I]); Break; end;
-  if (L=nil)or not TryBuildMapRakuRoute(Document,MapRakuRouteIdentifier(L),R,E)or not TryMapRakuRoutePosition(R,Motion.ProgressPercent,P,T,Current) then Exit;
+  L:=nil; if RouteCache=nil then for I:=0 to Document.LayerCount-1 do if (Document[I] is TVectArtPathLayer)and(TVectArtPathLayer(Document[I]).MapElement='route') then begin L:=TVectArtPathLayer(Document[I]); Break; end;
+  if RouteCache<>nil then R:=RouteCache^
+  else if (L=nil) or not TryBuildMapRakuRoute(Document,MapRakuRouteIdentifier(L),R,E) then Exit;
+  if not TryMapRakuRoutePosition(R,Motion.ProgressPercent,P,T,Current) then Exit;
   if Motion.RouteDisplay=1 then
     DrawRouteTrail(Document,Target,R,Motion.ProgressPercent,P,Motion.RouteColor,
       LayerIndex);
@@ -259,7 +263,7 @@ end;
 procedure DrawMapRakuPluginRouteLayer(Document: TVectArtDocument;
   Target: TVectArtRenderBuffer; const Motion: TMapRakuPluginRouteMotion;
   LayerIndex: Integer; MarkerImage: TVectArtRenderBuffer;
-  ClipMask: TVectArtRenderBuffer);
+  ClipMask: TVectArtRenderBuffer; RouteCache: PMapRakuRouteProgressData);
 var Raster: TRouteRaster; OwnedMask: TVectArtRenderBuffer;
   Crossings: TMapCrossingRenderContext;
 begin
@@ -285,16 +289,18 @@ begin
       finally Crossings.Free; end;
       Raster.Mask:=OwnedMask;
     end;
-    DrawRouteLayer(Document,Raster,Motion,LayerIndex,MarkerImage);
+    DrawRouteLayer(Document,Raster,Motion,LayerIndex,MarkerImage,RouteCache);
   finally OwnedMask.Free; end;
 end;
 
 function TryMapRakuPluginRoutePosition(Document:TVectArtDocument;
-  ProgressPercent:Double; out Position:TPointF):Boolean;
+  ProgressPercent:Double; out Position:TPointF; RouteCache:PMapRakuRouteProgressData):Boolean;
 var I:Integer; Path,Current:TVectArtPathLayer; Route:TMapRakuRouteProgressData;
   Tangent:TPointF; ErrorText:string;
 begin
   Result:=False; Position:=PointF(0,0); Path:=nil;
+  if RouteCache<>nil then
+    Exit(TryMapRakuRoutePosition(RouteCache^,ProgressPercent,Position,Tangent,Current));
   if Document=nil then Exit;
   for I:=0 to Document.LayerCount-1 do
     if (Document[I] is TVectArtPathLayer) and

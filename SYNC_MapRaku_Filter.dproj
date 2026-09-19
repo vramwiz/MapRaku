@@ -47,7 +47,7 @@
     <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
         <Debugger_HostApplication>D:\aviutl2_v2.1.6a\aviutl2.exe</Debugger_HostApplication>
         <Debugger_WorkingDirectory>D:\aviutl2_v2.1.6a</Debugger_WorkingDirectory>
-        <PreBuildEvent><![CDATA[if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
+        <PreBuildEvent><![CDATA[call "$(MSBuildProjectDirectory)\Tools\ensure-skia.cmd"&&if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
         <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
         <PostBuildEvent><![CDATA[copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll"&&copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll"]]></PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
@@ -55,10 +55,16 @@
     <PropertyGroup Condition="'$(Cfg_2_Win64)'!=''">
         <Debugger_HostApplication>D:\aviutl2_v2.1.6a\aviutl2.exe</Debugger_HostApplication>
         <Debugger_WorkingDirectory>D:\aviutl2_v2.1.6a</Debugger_WorkingDirectory>
-        <PreBuildEvent><![CDATA[if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
+        <PreBuildEvent><![CDATA[call "$(MSBuildProjectDirectory)\Tools\ensure-skia.cmd"&&if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku" mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku"]]></PreBuildEvent>
         <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
         <PostBuildEvent><![CDATA[copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll"&&copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll"]]></PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Debug'">
+        <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
+        <DCC_DebugInformation>1</DCC_DebugInformation>
+        <DCC_LocalDebugSymbols>true</DCC_LocalDebugSymbols>
+        <DCC_Optimize>false</DCC_Optimize>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">
@@ -70,6 +76,7 @@
         <DCCReference Include="Source\PlacementPlugin\MapRakuFilterPlugin.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuFilterContext.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuPluginRouteMarker.pas"/>
+        <DCCReference Include="Source\PlacementPlugin\MapRakuPluginViewport.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuPluginDocument.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuEditorHost.pas"/>
         <DCCReference Include="Source\PlacementPlugin\MapRakuFrameCapture.pas"/>
@@ -292,7 +299,7 @@
     <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
     <Import Project="$(MSBuildProjectName).deployproj" Condition="Exists('$(MSBuildProjectName).deployproj')"/>
     <PropertyGroup Condition="'$(Config)'=='Debug' And '$(Platform)'=='Win64'">
-        <PreBuildEvent>if not exist &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot; mkdir &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot;</PreBuildEvent>
+        <PreBuildEvent>call &quot;$(MSBuildProjectDirectory)\Tools\ensure-skia.cmd&quot;&amp;&amp;if not exist &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot; mkdir &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot;</PreBuildEvent>
         <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
         <PreLinkEvent/>
         <PreLinkEventIgnoreExitCode>False</PreLinkEventIgnoreExitCode>
@@ -300,7 +307,7 @@
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Release' And '$(Platform)'=='Win64'">
-        <PreBuildEvent>if not exist &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot; mkdir &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot;</PreBuildEvent>
+        <PreBuildEvent>call &quot;$(MSBuildProjectDirectory)\Tools\ensure-skia.cmd&quot;&amp;&amp;if not exist &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot; mkdir &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku&quot;</PreBuildEvent>
         <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
         <PreLinkEvent/>
         <PreLinkEventIgnoreExitCode>False</PreLinkEventIgnoreExitCode>

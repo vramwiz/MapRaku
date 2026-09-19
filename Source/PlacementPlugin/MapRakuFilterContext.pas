@@ -6,13 +6,16 @@ interface
 uses
   AviUtl2FilterTypes, PluginFilterContextManager, MapRakuFrameCapture,
   System.SysUtils, System.Types, System.Math, System.Generics.Collections, Winapi.Windows, MapRakuDocument, MapRakuRenderer,
-  MapRakuPluginRouteMarker, MapRakuCrossingRenderer;
+  MapRakuPluginRouteMarker, MapRakuCrossingRenderer, MapRakuRouteProgress;
 
 type
   TMapRakuFilterContext = class(TPluginFilterContextItem)
   private
     FFrameCapture: TMapRakuFrameCapture;
     FDocument: TVectArtDocument;
+    FRouteCache: TMapRakuRouteProgressData;
+    FRouteCacheRevision: Int64;
+    FRouteBuildCount: Integer;
     FLastAttemptedData: string;
     FLastError: string;
     FOutputBuffer: TVectArtRenderBuffer;
@@ -39,6 +42,7 @@ type
     FRenderedRevision: Int64;
     FSerializedData: string;
     FRenderLock: TRTLCriticalSection;
+    procedure UpdateRouteCache;
     procedure UpdateStaticMapCache(Width, Height: Integer; HasRoute: Boolean);
     procedure UpdateMarkerImage(const FileName: string);
   public
@@ -58,6 +62,7 @@ type
       const Motion: TMapRakuPluginRouteMotion): Boolean;
     // 設定値が変わったときだけDocumentを更新し、解析失敗時は直前の正常状態を保つ。
     function UpdateSerializedData(const Value: string): Boolean;
+    property RouteBuildCount: Integer read FRouteBuildCount;
     property Document: TVectArtDocument read FDocument;
     property LastError: string read FLastError;
     property SerializedData: string read FSerializedData;
@@ -68,12 +73,12 @@ type
 implementation
 
 uses
-  MapRakuDocumentJson, MapRakuPluginRender, Vcl.Graphics, System.Diagnostics,
+  MapRakuDocumentJson, MapRakuPluginRender, MapRakuPluginViewport, System.Diagnostics,
   System.IOUtils, Vcl.Imaging.pngimage;
 
 procedure WritePerformanceLog(LastTick: PUInt64; Width, Height, Layers: Integer;
   MapMilliseconds, ViewportMilliseconds, CompositeMilliseconds,
-  TotalMilliseconds: Double);
+  TotalMilliseconds: Double; const Detail: string);
 var NowTick: UInt64; FileName, Line: string;
 begin
   NowTick:=GetTickCount64;
@@ -82,6 +87,12 @@ begin
   Line:=Format('%s %dx%d layers=%d map=%.2fms viewport=%.2fms output=%.2fms total=%.2fms',
     [FormatDateTime('yyyy-mm-dd hh:nn:ss.zzz',Now),Width,Height,Layers,
      MapMilliseconds,ViewportMilliseconds,CompositeMilliseconds,TotalMilliseconds]);
+  Line:=Line+Format(' pid=%d ',[GetCurrentProcessId])+Detail;
+{$IFDEF DEBUG}
+  Line:=Line+' build=Debug';
+{$ELSE}
+  Line:=Line+' build=Release';
+{$ENDIF}
   OutputDebugString(PChar('MapRaku performance: '+Line));
   try
     FileName:=TPath.Combine(TPath.GetTempPath,'MapRakuPluginPerformance.log');
@@ -108,6 +119,7 @@ begin
   FStaticRouteLayerIndices := TList<Integer>.Create;
   FStaticMapBuffer := TVectArtRenderBuffer.Create;
   FStaticCacheRevision := -1;
+  FRouteCacheRevision := -1;
   FViewportBuffer := TVectArtRenderBuffer.Create;
   FOverlayBuffer := TVectArtRenderBuffer.Create;
   FRenderedRevision := -1;
@@ -213,6 +225,23 @@ begin
   FStaticCacheData:=FSerializedData;
 end;
 
+procedure TMapRakuFilterContext.UpdateRouteCache;
+var I:Integer; RouteId,ErrorText:string;
+begin
+  if FRouteCacheRevision=FDocument.Revision then Exit;
+  FRouteCache:=Default(TMapRakuRouteProgressData);
+  for I:=1 to FDocument.LayerCount-1 do
+    if (FDocument[I] is TVectArtPathLayer) and
+      (TVectArtPathLayer(FDocument[I]).MapElement='route') then
+    begin
+      RouteId:=MapRakuRouteIdentifier(TVectArtPathLayer(FDocument[I]));
+      Inc(FRouteBuildCount);
+      if not TryBuildMapRakuRoute(FDocument,RouteId,FRouteCache,ErrorText) then
+        FRouteCache:=Default(TMapRakuRouteProgressData);
+      Break;
+    end;
+  FRouteCacheRevision:=FDocument.Revision;
+end;
 procedure TMapRakuFilterContext.ProcessVideo(Video: PFILTER_PROC_VIDEO;
   const Value: string; const Motion: TMapRakuPluginRouteMotion);
 begin
@@ -232,10 +261,11 @@ function TMapRakuFilterContext.RenderVideo(Video: PFILTER_PROC_VIDEO;
 var
   Height: Integer;
   HasRoute: Boolean;
-  I, DisplayWidth, DisplayHeight, Left, Top, Right, Bottom, OffsetX, OffsetY: Integer;
-  MarkerPosition: TPointF;
+  I: Integer;
   MarkerMotion, TrailMotion: TMapRakuPluginRouteMotion;
-  CompositeWatch, MapWatch, TotalWatch, ViewportWatch: TStopwatch;
+  CompositeWatch, MapWatch, TotalWatch, ViewportWatch, Phase: TStopwatch;
+  StaticMs,RouteMs,TrailDrawMs,BlendMs,MarkerDrawMs,MarkerBlendMs: Double;
+  StaticRebuilt:Boolean;
   Width: Integer;
 begin
   Result := False;
@@ -273,71 +303,54 @@ begin
   for I:=1 to FDocument.LayerCount-1 do
     HasRoute:=HasRoute or ((FDocument[I] is TVectArtPathLayer) and
       (TVectArtPathLayer(FDocument[I]).MapElement='route'));
+  StaticRebuilt:=(FStaticCacheRevision<>FDocument.Revision) or
+    (FStaticCacheWidth<>Width) or (FStaticCacheHeight<>Height) or
+    (FStaticCacheHasRoute<>HasRoute) or (FStaticCacheData<>FSerializedData);
+  Phase:=TStopwatch.StartNew;
   UpdateStaticMapCache(Width,Height,HasRoute);
+  StaticMs:=Phase.Elapsed.TotalMilliseconds; Phase:=TStopwatch.StartNew;
+  UpdateRouteCache;
+  RouteMs:=Phase.Elapsed.TotalMilliseconds;
+  TrailDrawMs:=0; MarkerDrawMs:=0; MarkerBlendMs:=0;
+  Phase:=TStopwatch.StartNew;
   if not HasRoute then begin
     FOverlayBuffer.SetSize(Width,Height); FOverlayBuffer.Clear;
     CompositeVectArtRgba(FStaticMapBuffer,FOverlayBuffer.Data,Width,Height);
+    BlendMs:=Phase.Elapsed.TotalMilliseconds;
   end else begin
     // 動画用ルートを本来のレイヤー順へ差し込む。各レイヤーの交差クリップは
     // 既存レンダラーが生成し、後の上側レイヤーが移動体を覆う。
     FOverlayBuffer.SetSize(Width,Height); FOverlayBuffer.Clear;
-    if FDocument.CanvasLayer.Visible and not FDocument.CanvasLayer.Transparent then
-      for I:=0 to FOverlayBuffer.PixelCount-1 do begin
-        FOverlayBuffer.Pixels[I].R:=GetRValue(ColorToRGB(FDocument.CanvasLayer.BackgroundColor));
-        FOverlayBuffer.Pixels[I].G:=GetGValue(ColorToRGB(FDocument.CanvasLayer.BackgroundColor));
-        FOverlayBuffer.Pixels[I].B:=GetBValue(ColorToRGB(FDocument.CanvasLayer.BackgroundColor));
-        FOverlayBuffer.Pixels[I].A:=255;
-      end;
     TrailMotion:=Motion; TrailMotion.DrawMarker:=False;
     CompositeVectArtRgba(FStaticLayerBuffers[0],FOverlayBuffer.Data,Width,Height);
+    BlendMs:=Phase.Elapsed.TotalMilliseconds;
     for I:=0 to FStaticRouteLayerIndices.Count-1 do begin
+      Phase:=TStopwatch.StartNew;
       FRouteOverlayBuffer.SetSize(Width,Height); FRouteOverlayBuffer.Clear;
       DrawMapRakuPluginRouteLayer(FDocument,FRouteOverlayBuffer,TrailMotion,
-        FStaticRouteLayerIndices[I],FMarkerImage,FRouteClipMasks[I]);
+        FStaticRouteLayerIndices[I],FMarkerImage,FRouteClipMasks[I],@FRouteCache);
+      TrailDrawMs:=TrailDrawMs+Phase.Elapsed.TotalMilliseconds;
+      Phase:=TStopwatch.StartNew;
       CompositeVectArtRgba(FRouteOverlayBuffer,FOverlayBuffer.Data,Width,Height);
       CompositeVectArtRgba(FStaticLayerBuffers[I+1],FOverlayBuffer.Data,Width,Height);
+      BlendMs:=BlendMs+Phase.Elapsed.TotalMilliseconds;
     end;
     // 頂点で隣接区間の軌跡に覆われないよう、マーカーだけを最後に重ねる。
     // 共通クリップの内外へ通常／道路の下の透明度を適用済み。
     // 道路の下を表示する設定も、上側道路の上塗りで失わない。
+    Phase:=TStopwatch.StartNew;
     FMarkerBuffer.SetSize(Width,Height); FMarkerBuffer.Clear;
     MarkerMotion:=Motion; MarkerMotion.RouteDisplay:=0; MarkerMotion.DrawMarker:=True;
     for I:=0 to FStaticRouteLayerIndices.Count-1 do
       DrawMapRakuPluginRouteLayer(FDocument,FMarkerBuffer,MarkerMotion,
-        FStaticRouteLayerIndices[I],FMarkerImage,FRouteClipMasks[I]);
+        FStaticRouteLayerIndices[I],FMarkerImage,FRouteClipMasks[I],@FRouteCache);
+    MarkerDrawMs:=Phase.Elapsed.TotalMilliseconds; Phase:=TStopwatch.StartNew;
     CompositeVectArtRgba(FMarkerBuffer,FOverlayBuffer.Data,Width,Height);
+    MarkerBlendMs:=Phase.Elapsed.TotalMilliseconds;
   end;
   MapWatch.Stop;
   ViewportWatch:=TStopwatch.StartNew;
-  DisplayWidth:=EnsureRange(Round(Motion.DisplayWidth),1,Width);
-  DisplayHeight:=EnsureRange(Round(Motion.DisplayHeight),1,Height);
-  Left:=(Width-DisplayWidth) div 2; Top:=(Height-DisplayHeight) div 2;
-  Right:=Left+DisplayWidth; Bottom:=Top+DisplayHeight;
-  OffsetX:=0; OffsetY:=0;
-  if TryMapRakuPluginRoutePosition(FDocument,Motion.ProgressPercent,
-    MarkerPosition) then begin
-    MarkerPosition.X:=(MarkerPosition.X+FDocument.CanvasLayer.Width*0.5)*
-      Width/FDocument.CanvasLayer.Width;
-    MarkerPosition.Y:=(MarkerPosition.Y+FDocument.CanvasLayer.Height*0.5)*
-      Height/FDocument.CanvasLayer.Height;
-    if MarkerPosition.X<Left+DisplayWidth*Motion.ScrollStartRate*0.01 then
-      OffsetX:=Round(Left+DisplayWidth*Motion.ScrollStartRate*0.01-MarkerPosition.X)
-    else if MarkerPosition.X>Right-DisplayWidth*Motion.ScrollStartRate*0.01 then
-      OffsetX:=Round(Right-DisplayWidth*Motion.ScrollStartRate*0.01-MarkerPosition.X);
-    if MarkerPosition.Y<Top+DisplayHeight*Motion.ScrollStartRate*0.01 then
-      OffsetY:=Round(Top+DisplayHeight*Motion.ScrollStartRate*0.01-MarkerPosition.Y)
-    else if MarkerPosition.Y>Bottom-DisplayHeight*Motion.ScrollStartRate*0.01 then
-      OffsetY:=Round(Bottom-DisplayHeight*Motion.ScrollStartRate*0.01-MarkerPosition.Y);
-    OffsetX:=EnsureRange(OffsetX,Right-Width,Left);
-    OffsetY:=EnsureRange(OffsetY,Bottom-Height,Top);
-  end;
-  FViewportBuffer.SetSize(Width,Height); FViewportBuffer.Clear;
-  CompositeVectArtRgbaOffset(FOverlayBuffer,FViewportBuffer.Data,Width,Height,
-    OffsetX,OffsetY);
-  for I:=0 to FViewportBuffer.PixelCount-1 do
-    if ((I mod Width)<Left) or ((I mod Width)>=Right) or
-       ((I div Width)<Top) or ((I div Width)>=Bottom) then
-      FViewportBuffer.Pixels[I]:=Default(TVectArtRgbaPixel);
+  RenderMapRakuPluginViewport(FDocument,FOverlayBuffer,FViewportBuffer,Motion,@FRouteCache);
   ViewportWatch.Stop;
   CompositeWatch:=TStopwatch.StartNew;
   FOutputBuffer.SetSize(Width, Height);
@@ -351,7 +364,10 @@ begin
   TotalWatch.Stop;
   WritePerformanceLog(@FLastPerformanceLogTick,Width,Height,FDocument.LayerCount,
     MapWatch.Elapsed.TotalMilliseconds,ViewportWatch.Elapsed.TotalMilliseconds,
-    CompositeWatch.Elapsed.TotalMilliseconds,TotalWatch.Elapsed.TotalMilliseconds);
+    CompositeWatch.Elapsed.TotalMilliseconds,TotalWatch.Elapsed.TotalMilliseconds,
+    Format('static_rebuilt=%s static=%.3f route=%.3f route_builds=%d trail=%.3f layer_blend=%.3f marker=%.3f marker_blend=%.3f',
+      [BoolToStr(StaticRebuilt,True),StaticMs,RouteMs,FRouteBuildCount,
+       TrailDrawMs,BlendMs,MarkerDrawMs,MarkerBlendMs]));
   Result := True;
 end;
 
@@ -398,6 +414,8 @@ begin
       FLastError := ErrorMessage;
       Exit(False);
     end;
+    FRouteCache:=Default(TMapRakuRouteProgressData);
+    FRouteCacheRevision:=-1;
     FDocument.Free;
     FDocument := NewDocument;
     NewDocument := nil;

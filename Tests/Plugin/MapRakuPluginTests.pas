@@ -2,17 +2,18 @@
 unit MapRakuPluginTests;
 
 interface
+procedure RunPluginPerformance(const FileName: string);
 procedure RunPluginTests(const PluginFile: string);
 procedure ServePluginEditor;
 
 implementation
 
 uses System.SysUtils, System.Classes, System.UITypes, System.Types, System.Math,
-  System.JSON, System.Skia, Winapi.Windows,
+  System.JSON, System.Skia, Winapi.Windows, System.IOUtils, System.Diagnostics,
   Vcl.Forms, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics,
   AviUtl2FilterTypes, MapRakuDocument, MapRakuDocumentJson,
   MapRakuPluginDocument, MapRakuFilterContext, MapRakuPluginRender,
-  MapRakuPluginRouteMarker, MapRakuCanvasPreview,
+  MapRakuPluginRouteMarker, MapRakuPluginViewport, MapRakuCanvasPreview,
   MapRakuRenderer, MapRakuEditorHost, MapRakuMainForm, MapRakuCanvas,
   MapRakuAutomationWire, MapRakuAutomationFactory,
   TextRendererSkiaRuntime, TextRendererSkiaBootstrap;
@@ -64,6 +65,23 @@ begin
   end;
 end;
 
+function PluginItemIndex(Table: PFILTER_PLUGIN_TABLE;
+  const Name: string): Integer;
+var I: Integer; Item: Pointer; ItemName: PWideChar;
+begin
+  Result := -1;
+  if (Table = nil) or (Table^.Items = nil) then Exit;
+  I := 0;
+  while True do
+  begin
+    Item := PPointer(NativeUInt(Table^.Items) + NativeUInt(I) * SizeOf(Pointer))^;
+    if Item = nil then Exit;
+    ItemName := PPointer(NativeUInt(Item) + SizeOf(Pointer))^;
+    if (ItemName <> nil) and (string(ItemName) = Name) then Exit(I);
+    Inc(I);
+  end;
+end;
+
 procedure GetImage(Buffer: PPIXEL_RGBA); cdecl;
 var I: Integer;
 begin
@@ -102,7 +120,8 @@ procedure TestDll(const PluginFile: string);
 var Module: HMODULE; Init: TInitialize; Done: TFinalize; Table: PFILTER_PLUGIN_TABLE;
   GetTable: TGetTable; Data: PStringItem; Button: PButtonItem;
   Video: TFILTER_PROC_VIDEO; Obj: TOBJECT_INFO; Doc: TVectArtDocument;
-  Json: string; Expected: TVectArtRenderBuffer;
+  Json: string; Expected, Input, Viewport: TVectArtRenderBuffer;
+  Motion: TMapRakuPluginRouteMotion;
 begin
   Module := LoadLibrary(PChar(PluginFile));
   if Module = 0 then RaiseLastOSError;
@@ -123,6 +142,24 @@ begin
       Check((PTrackItem(FindPluginItem(Table, '進行位置')) <> nil) and
         (PTrackItem(FindPluginItem(Table, '進行位置'))^.Step = 0.01),
         'Missing progress parameter');
+      Check((PTrackItem(FindPluginItem(Table, '表示拡大率')) <> nil) and
+        (PTrackItem(FindPluginItem(Table, '表示拡大率'))^.Value = 100),
+        'Missing default 100% display scale');
+      Check((PTrackItem(FindPluginItem(Table, 'X')) <> nil) and
+        (PTrackItem(FindPluginItem(Table, 'Y')) <> nil) and
+        (PTrackItem(FindPluginItem(Table, 'X'))^.Value = 0) and
+        (PTrackItem(FindPluginItem(Table, 'Y'))^.Value = 0),
+        'Missing default centered display position');
+      Check((PluginItemIndex(Table, '進行位置') + 1 =
+        PluginItemIndex(Table, 'X')) and
+        (PluginItemIndex(Table, 'X') + 1 = PluginItemIndex(Table, 'Y')) and
+        (PluginItemIndex(Table, 'Y') + 1 =
+        PluginItemIndex(Table, '表示拡大率')) and
+        (PluginItemIndex(Table, '表示拡大率') + 1 =
+        PluginItemIndex(Table, '表示幅')) and
+        (PluginItemIndex(Table, '表示幅') + 1 =
+        PluginItemIndex(Table, '表示高さ')),
+        'Display controls are not directly below progress');
       Check((FindPluginItem(Table,'透明度')<>nil) and
         (FindPluginItem(Table,'下側透明度')<>nil),
         'Missing normal/underpass transparency controls');
@@ -146,6 +183,8 @@ begin
       Video := Default(TFILTER_PROC_VIDEO); Video.Object_ := @Obj;
       Video.GetImageData := GetImage; Video.SetImageData := SetImage;
       Doc := TVectArtDocument.Create; Expected := TVectArtRenderBuffer.Create;
+      Input := TVectArtRenderBuffer.Create;
+      Viewport := TVectArtRenderBuffer.Create;
       try
         SetCount := 0; Data^.Value := '';
         Check(Table^.Func_Proc_Video(@Video) = 1, 'Empty callback failed');
@@ -154,7 +193,8 @@ begin
         Doc.CanvasLayer.BackgroundColor := RGB(91, 123, 157);
         Json := SerializeVectArtDocument(Doc); Data^.Value := PChar(Json);
         Table^.Func_Proc_Video(@Video);
-        Check((SetCount = 1) and (Returned[0] = 91) and (Returned[3] = 255), 'Opaque background missing');
+        Check((SetCount = 1) and (Returned[0] = 23) and (Returned[2] = 67),
+          'Saved canvas background covered input video');
         Doc.CanvasLayer.Transparent := True;
         Json := SerializeVectArtDocument(Doc); Data^.Value := PChar(Json);
         Table^.Func_Proc_Video(@Video);
@@ -172,9 +212,38 @@ begin
         Json := SerializeVectArtDocument(Doc); Data^.Value := PChar(Json);
         Table^.Func_Proc_Video(@Video);
         RenderMapRakuPlugin(Doc, Expected, W, H);
+        Input.SetSize(W,H);
+        GetImage(PPIXEL_RGBA(Input.Data));
+        CompositeVectArtRgba(Expected,Input.Data,W,H);
+        Move(Input.Data^,Expected.Data^,W*H*4);
         Check(CompareMem(Expected.Data, @Returned[0], Length(Returned)), 'DLL render differs from common render');
+        PTrackItem(FindPluginItem(Table,'表示拡大率'))^.Value := 200;
+        Table^.Func_Proc_Video(@Video);
+        RenderMapRakuPlugin(Doc,Expected,W,H);
+        Motion := Default(TMapRakuPluginRouteMotion);
+        Motion.DisplayScale := 200;
+        Motion.DisplayWidth := W; Motion.DisplayHeight := H;
+        RenderMapRakuPluginViewport(Doc,Expected,Viewport,Motion);
+        GetImage(PPIXEL_RGBA(Input.Data));
+        CompositeVectArtRgba(Viewport,Input.Data,W,H);
+        Check(CompareMem(Input.Data,@Returned[0],Length(Returned)),
+          'Display scale setting did not reach video output');
+        PTrackItem(FindPluginItem(Table,'表示拡大率'))^.Value := 100;
+        PTrackItem(FindPluginItem(Table,'X'))^.Value := 5;
+        PTrackItem(FindPluginItem(Table,'Y'))^.Value := -3;
+        Table^.Func_Proc_Video(@Video);
+        RenderMapRakuPlugin(Doc,Expected,W,H);
+        Motion.DisplayScale := 100;
+        Motion.DisplayX := 5; Motion.DisplayY := -3;
+        RenderMapRakuPluginViewport(Doc,Expected,Viewport,Motion);
+        GetImage(PPIXEL_RGBA(Input.Data));
+        CompositeVectArtRgba(Viewport,Input.Data,W,H);
+        Check(CompareMem(Input.Data,@Returned[0],Length(Returned)),
+          'X/Y settings did not reach video output');
+        PTrackItem(FindPluginItem(Table,'X'))^.Value := 0;
+        PTrackItem(FindPluginItem(Table,'Y'))^.Value := 0;
       finally
-        Data^.Value := ''; Expected.Free; Doc.Free;
+        Data^.Value := ''; Viewport.Free; Input.Free; Expected.Free; Doc.Free;
       end;
     finally Done(); end;
     Check(Init(0) = 1, 'Reinitialization failed');
@@ -229,6 +298,8 @@ begin
     Check(TryDeserializeVectArtDocument(Updated, Doc, ErrorText),
       'Closing editor produced invalid JSON');
     Check(Doc.CanvasLayer.Width = 640, 'Closing editor lost edits');
+    Check(Doc.CanvasLayer.Transparent,
+      'New plugin map did not preserve transparent editing canvas');
     PreviousPipe := AutomationPipeShortName;
     Timer.Enabled := True;
     Applied := EditMapRaku('', nil, 0, 0, W, H, Updated, ErrorText);
@@ -261,6 +332,55 @@ begin
     Check(Canvas.DisplayBackgroundKind = 'none', 'Opaque canvas should hide host');
   finally Canvas.Free; Doc.Free; Bitmap.Free; end;
   Writeln('PASS host/source background separation');
+end;
+
+procedure TestDisplayScale;
+var Doc: TVectArtDocument; Source, Target: TVectArtRenderBuffer;
+  Motion: TMapRakuPluginRouteMotion;
+begin
+  Doc := TVectArtDocument.Create;
+  Source := TVectArtRenderBuffer.Create;
+  Target := TVectArtRenderBuffer.Create;
+  try
+    Doc.SetCanvasSize(W,H);
+    Source.SetSize(W,H); Source.Clear;
+    Source.Pixels[24*W+45].R := 255;
+    Source.Pixels[24*W+45].A := 255;
+    Motion := Default(TMapRakuPluginRouteMotion);
+    Motion.DisplayWidth := W; Motion.DisplayHeight := H;
+    Motion.DisplayScale := 100;
+    RenderMapRakuPluginViewport(Doc,Source,Target,Motion);
+    Check((Target.Pixels[24*W+45].R = 255) and
+      (Target.Pixels[24*W+50].A = 0), '100% display scale changed pixels');
+    Motion.DisplayScale := 200;
+    RenderMapRakuPluginViewport(Doc,Source,Target,Motion);
+    Check((Target.Pixels[24*W+50].R = 255) and
+      (Target.Pixels[24*W+50].A > 0) and
+      (Target.Pixels[24*W+45].A = 0),
+      '200% display scale did not enlarge map around center');
+    Motion.DisplayWidth := 24;
+    RenderMapRakuPluginViewport(Doc,Source,Target,Motion);
+    Check((Target.Pixels[24*W+50].A > 0) and
+      (Target.Pixels[24*W+52].A = 0),
+      'Display width did not clip scaled map');
+    Motion.DisplayWidth := W;
+    Motion.DisplayScale := 100;
+    Motion.DisplayX := 5; Motion.DisplayY := -3;
+    RenderMapRakuPluginViewport(Doc,Source,Target,Motion);
+    Check((Target.Pixels[21*W+50].R = 255) and
+      (Target.Pixels[24*W+45].A = 0),
+      'X/Y did not move the map from output center');
+    Motion.DisplayScale := 200;
+    RenderMapRakuPluginViewport(Doc,Source,Target,Motion);
+    Check((Target.Pixels[21*W+55].R = 255) and
+      (Target.Pixels[21*W+55].A > 0),
+      'X/Y did not move the enlarged map');
+    Motion.DisplayX := 16384;
+    RenderMapRakuPluginViewport(Doc,Source,Target,Motion);
+    Check(Target.Pixels[21*W+55].A = 0,
+      'Off-screen display position still drew into output');
+  finally Target.Free; Source.Free; Doc.Free; end;
+  Writeln('PASS display X/Y, scale, center, and display-frame clipping');
 end;
 
 procedure TestContexts;
@@ -524,6 +644,8 @@ begin
   Doc:=TVectArtDocument.Create; Context:=TMapRakuFilterContext.Create;
   try
     AddRouteCrossingFixture(Doc);
+    Doc.CanvasLayer.Transparent:=False;
+    Doc.CanvasLayer.BackgroundColor:=clWhite;
     Obj:=Default(TOBJECT_INFO); Obj.Width:=W; Obj.Height:=H;
     Video:=Default(TFILTER_PROC_VIDEO); Video.Object_:=@Obj;
     Video.GetImageData:=GetImage; Video.SetImageData:=SetImage;
@@ -533,9 +655,10 @@ begin
     Motion.MarkerScale:=100; Motion.MarkerTransparency:=0; Motion.MarkerUnderpassTransparency:=100; Motion.MarkerColor:=clBlue;
     Check(Context.UpdateSerializedData(SerializeVectArtDocument(Doc)),'Fixture load');
     Check(Context.RenderVideo(@Video,Motion),'Video render');
+    Check(Context.RouteBuildCount=1,'Route builds once for trail, marker and viewport');
     Index:=(24*W+28)*4;
     Check((Returned[Index]=23) and (Returned[Index+1]=45) and
-      (Returned[Index+2]=67),'Bridge margin must preserve input background');
+      (Returned[Index+2]=67),'Opaque saved canvas covered input video');
     Index:=(14*W+40)*4;
     Check((Returned[Index]>23) and (Returned[Index+2]>67),
       'Translucent bridge replaced by final marker');
@@ -546,16 +669,67 @@ begin
     Motion.MarkerTransparency:=0; Motion.MarkerUnderpassTransparency:=100;
     Motion.ProgressPercent:=100;
     Check(Context.RenderVideo(@Video,Motion),'Cached video render');
+    Check(Context.RouteBuildCount=1,'Progress and appearance must reuse route geometry');
     Index:=(24*W+52)*4;
     Check((Returned[Index]=23) and (Returned[Index+2]=67),'Cached trail leaked');
     Doc[3].Visible:=False;
     Check(Context.UpdateSerializedData(SerializeVectArtDocument(Doc)),'Updated fixture');
     Check(Context.RenderVideo(@Video,Motion),'Invalidated video render');
     Check(Returned[Index]=255,'Hidden bridge did not invalidate clip mask');
+    Check(Context.RouteBuildCount=2,'Document replacement rebuilds route exactly once');
+    for Index:=0 to 99 do begin
+      Motion.ProgressPercent:=Index;
+      Check(Context.RenderVideo(@Video,Motion),'Cached animation frame');
+    end;
+    Check(Context.RouteBuildCount=2,'100 animation frames must not rebuild route');
+    TVectArtPathLayer(Context.Document[1]).Closed:=True;
+    Context.Document.Changed;
+    Check(Context.RenderVideo(@Video,Motion),'Invalid route frame');
+    Check(Context.RouteBuildCount=3,'Route edit invalidates cached geometry');
+    Check(Context.RenderVideo(@Video,Motion),'Repeated invalid route frame');
+    Check(Context.RouteBuildCount=3,'Failed route results are cached too');
+    TVectArtPathLayer(Context.Document[1]).Closed:=False;
+    Context.Document.Changed;
+    Check(Context.RenderVideo(@Video,Motion),'Restored route frame');
+    Check(Context.RouteBuildCount=4,'Route recovery rebuilds cached geometry');
   finally Context.Free; Doc.Free; end;
   Writeln('PASS final video bridge gap, translucent upper path, cached progress and invalidation');
 end;
 
+procedure SetPerformanceImage(Buffer:PPIXEL_RGBA; Width,Height:Integer); cdecl;
+begin
+  SetLength(Returned,Width*Height*4);
+  Move(Buffer^,Returned[0],Length(Returned));
+end;
+procedure RunPluginPerformance(const FileName:string);
+var Context:TMapRakuFilterContext; Motion:TMapRakuPluginRouteMotion;
+  Video:TFILTER_PROC_VIDEO; Obj:TOBJECT_INFO; I:Integer; Watch:TStopwatch;
+  Sum,FirstMs:Double;
+begin
+  TTextRendererSkiaRuntime.Acquire(BundledSkiaRuntimeFileName);
+  Context:=TMapRakuFilterContext.Create;
+  try
+    Check(Context.UpdateSerializedData(TFile.ReadAllText(FileName,TEncoding.UTF8)),Context.LastError);
+    Obj:=Default(TOBJECT_INFO); Obj.Width:=1920; Obj.Height:=1080;
+    Video:=Default(TFILTER_PROC_VIDEO); Video.Object_:=@Obj;
+    // 入力は透明画像、出力は既存の疑似ホストへコピーする。
+    Video.SetImageData:=SetPerformanceImage;
+    Motion:=Default(TMapRakuPluginRouteMotion);
+    Motion.DisplayScale:=100; Motion.MarkerScale:=100; Motion.MarkerColor:=clBlue;
+    Motion.RouteDisplay:=1; Motion.RouteColor:=clRed;
+    Motion.MarkerUnderpassTransparency:=100;
+    Sum:=0; FirstMs:=0;
+    for I:=0 to 120 do begin
+      Motion.ProgressPercent:=(I mod 101);
+      Watch:=TStopwatch.StartNew;
+      Check(Context.RenderVideo(@Video,Motion),'Performance render failed');
+      if I=0 then FirstMs:=Watch.Elapsed.TotalMilliseconds
+      else Sum:=Sum+Watch.Elapsed.TotalMilliseconds;
+    end;
+    Writeln(Format('PERF 1920x1080 first=%.3fms warm_average=%.3fms frames=120 route_builds=%d',
+      [FirstMs,Sum/120,Context.RouteBuildCount]));
+  finally Context.Free; TTextRendererSkiaRuntime.Release; end;
+end;
 procedure RunPluginTests(const PluginFile: string);
 begin
   TTextRendererSkiaRuntime.Acquire(BundledSkiaRuntimeFileName);
@@ -567,6 +741,7 @@ begin
     TestMarkerTransparency;
     TestRouteCrossingVideo;
     TestBackgrounds;
+    TestDisplayScale;
     TestModal;
     TestDll(PluginFile);
     TestModal;
