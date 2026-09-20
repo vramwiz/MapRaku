@@ -14,7 +14,7 @@ type
     FHeight: Integer;
     FInitialized: Boolean;
     FLock: TRTLCriticalSection;
-    FPixels: TBytes;
+    FRawPixels: TBytes;
     FStagingTexture: IInterface;
     FStatus: string;
     FWidth: Integer;
@@ -23,12 +23,15 @@ type
   public
     constructor Create;
     destructor Destroy; override;
-    // 現在の合成済みフレームをCPUから参照できるRGBA8配列へ複製する。
+    // 現在の合成済みフレームを元の画素形式で保存する。
     procedure Capture(Video: PFILTER_PROC_VIDEO);
-    // 保持中の画像を呼び出し側所有の配列として複製する。
+    // 編集画面用にRGBA8へ変換し、呼び出し側所有の配列として返す。
     function CopyRgba(out Pixels: TBytes; out Width, Height: Integer;
       out Status: string): Boolean;
   end;
+
+function ConvertMapRakuFramebufferToRgba(const SourcePixels: TBytes;
+  Width, Height, Format: Integer): TBytes;
 
 implementation
 
@@ -102,6 +105,66 @@ begin
   Result := Round(Value * 255);
 end;
 
+function ConvertMapRakuFramebufferToRgba(const SourcePixels: TBytes;
+  Width, Height, Format: Integer): TBytes;
+var
+  TextureFormat: DXGI_FORMAT;
+  Source, Destination: PByte;
+  SourceWords: PPixelWords;
+  X, Y, I: Integer;
+begin
+  Result:=nil;
+  TextureFormat:=DXGI_FORMAT(Format);
+  if (Width<=0) or (Height<=0) or (Width>MAX_CAPTURE_DIMENSION) or
+    (Height>MAX_CAPTURE_DIMENSION) or (BytesPerPixel(TextureFormat)=0) or
+    (Length(SourcePixels)<>Int64(Width)*Height*BytesPerPixel(TextureFormat)) then Exit;
+  SetLength(Result,NativeInt(Width)*Height*4);
+  Destination:=@Result[0];
+  for Y:=0 to Height-1 do begin
+    Source:=@SourcePixels[NativeInt(Y)*Width*BytesPerPixel(TextureFormat)];
+    case TextureFormat of
+      DXGI_FORMAT_R8G8B8A8_UNORM,
+      DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+        Move(Source^, Destination^, NativeInt(Width) * 4);
+      DXGI_FORMAT_B8G8R8A8_UNORM,
+      DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+        for X := 0 to Width - 1 do
+        begin
+          Destination[X * 4] := Source[X * 4 + 2];
+          Destination[X * 4 + 1] := Source[X * 4 + 1];
+          Destination[X * 4 + 2] := Source[X * 4];
+          Destination[X * 4 + 3] := Source[X * 4 + 3];
+        end;
+      DXGI_FORMAT_R16G16B16A16_UNORM,
+      DXGI_FORMAT_R16G16B16A16_FLOAT:
+        begin
+          SourceWords := PPixelWords(Source);
+          for X := 0 to Width - 1 do
+          begin
+            I := X * 4;
+            if TextureFormat = DXGI_FORMAT_R16G16B16A16_UNORM then
+            begin
+              Destination[I] := SourceWords[0] div 257;
+              Destination[I + 1] := SourceWords[1] div 257;
+              Destination[I + 2] := SourceWords[2] div 257;
+              Destination[I + 3] := SourceWords[3] div 257;
+            end
+            else
+            begin
+              Destination[I] := FloatToByte(HalfToSingle(SourceWords[0]));
+              Destination[I + 1] := FloatToByte(HalfToSingle(SourceWords[1]));
+              Destination[I + 2] := FloatToByte(HalfToSingle(SourceWords[2]));
+              Destination[I + 3] := Round(EnsureRange(
+                HalfToSingle(SourceWords[3]), 0.0, 1.0) * 255);
+            end;
+            Inc(SourceWords);
+          end;
+        end;
+    end;
+    Inc(Destination,NativeInt(Width)*4);
+  end;
+end;
+
 constructor TMapRakuFrameCapture.Create;
 begin
   inherited Create;
@@ -117,7 +180,7 @@ begin
     EnterCriticalSection(FLock);
     try
       ResetGpuResources;
-      FPixels := nil;
+      FRawPixels := nil;
     finally
       LeaveCriticalSection(FLock);
     end;
@@ -134,7 +197,7 @@ end;
 
 procedure TMapRakuFrameCapture.ClearImage(const StatusText: string);
 begin
-  FPixels := nil;
+  FRawPixels := nil;
   FWidth := 0;
   FHeight := 0;
   FStatus := StatusText;
@@ -147,18 +210,15 @@ var
   Device: ID3D11Device;
   TextureFormat: DXGI_FORMAT;
   Height: Integer;
-  I: Integer;
   Mapped: D3D11_MAPPED_SUBRESOURCE;
   PixelCount: NativeInt;
   Source: PByte;
   SourceDesc: D3D11_TEXTURE2D_DESC;
   SourcePointer: Pointer;
   SourceTexture: ID3D11Texture2D;
-  SourceWords: PPixelWords;
   StagingDesc: D3D11_TEXTURE2D_DESC;
   StagingTexture: ID3D11Texture2D;
   Width: Integer;
-  X: Integer;
   Y: Integer;
 begin
   if not FInitialized then
@@ -250,52 +310,15 @@ begin
         Exit;
       end;
       try
+        // 再生中は元の形式のまま保持し、編集画面で必要になるまで色変換しない。
         PixelCount := NativeInt(Width) * Height;
-        SetLength(FPixels, PixelCount * 4);
-        Destination := @FPixels[0];
+        SetLength(FRawPixels, PixelCount * BytesPerPixel(TextureFormat));
+        Destination := @FRawPixels[0];
         for Y := 0 to Height - 1 do
         begin
           Source := PByte(Mapped.pData) + NativeInt(Y) * Mapped.RowPitch;
-          case TextureFormat of
-            DXGI_FORMAT_R8G8B8A8_UNORM,
-            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
-              Move(Source^, Destination^, NativeInt(Width) * 4);
-            DXGI_FORMAT_B8G8R8A8_UNORM,
-            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
-              for X := 0 to Width - 1 do
-              begin
-                Destination[X * 4] := Source[X * 4 + 2];
-                Destination[X * 4 + 1] := Source[X * 4 + 1];
-                Destination[X * 4 + 2] := Source[X * 4];
-                Destination[X * 4 + 3] := Source[X * 4 + 3];
-              end;
-            DXGI_FORMAT_R16G16B16A16_UNORM,
-            DXGI_FORMAT_R16G16B16A16_FLOAT:
-              begin
-                SourceWords := PPixelWords(Source);
-                for X := 0 to Width - 1 do
-                begin
-                  I := X * 4;
-                  if TextureFormat = DXGI_FORMAT_R16G16B16A16_UNORM then
-                  begin
-                    Destination[I] := SourceWords[0] div 257;
-                    Destination[I + 1] := SourceWords[1] div 257;
-                    Destination[I + 2] := SourceWords[2] div 257;
-                    Destination[I + 3] := SourceWords[3] div 257;
-                  end
-                  else
-                  begin
-                    Destination[I] := FloatToByte(HalfToSingle(SourceWords[0]));
-                    Destination[I + 1] := FloatToByte(HalfToSingle(SourceWords[1]));
-                    Destination[I + 2] := FloatToByte(HalfToSingle(SourceWords[2]));
-                    Destination[I + 3] := Round(EnsureRange(
-                      HalfToSingle(SourceWords[3]), 0.0, 1.0) * 255);
-                  end;
-                  Inc(SourceWords);
-                end;
-              end;
-          end;
-          Inc(Destination, NativeInt(Width) * 4);
+          Move(Source^, Destination^, NativeInt(Width) * BytesPerPixel(TextureFormat));
+          Inc(Destination, NativeInt(Width) * BytesPerPixel(TextureFormat));
         end;
       finally
         Context.Unmap(StagingTexture, 0);
@@ -317,8 +340,10 @@ end;
 
 function TMapRakuFrameCapture.CopyRgba(out Pixels: TBytes;
   out Width, Height: Integer; out Status: string): Boolean;
+var RawPixels: TBytes; Format: Integer;
 begin
   Pixels := nil;
+  Format := 0;
   Width := 0;
   Height := 0;
   Status := '';
@@ -328,16 +353,19 @@ begin
   try
     Status := FStatus;
     Result := (FWidth > 0) and (FHeight > 0) and
-      (Length(FPixels) = NativeInt(FWidth) * FHeight * 4);
+      (Length(FRawPixels) = NativeInt(FWidth) * FHeight * BytesPerPixel(DXGI_FORMAT(FFormat)));
     if Result then
     begin
-      Pixels := Copy(FPixels);
+      RawPixels := Copy(FRawPixels);
+      Format := FFormat;
       Width := FWidth;
       Height := FHeight;
     end;
   finally
     LeaveCriticalSection(FLock);
   end;
+  if Result then
+    Pixels := ConvertMapRakuFramebufferToRgba(RawPixels,Width,Height,Format);
 end;
 
 end.

@@ -37,6 +37,7 @@ uses System.Math, Vcl.Graphics, Winapi.Windows, MapRakuCrossingRenderer;
 type
   TRouteRaster = record
     Buffer, Mask: TVectArtRenderBuffer;
+    DirtyBounds: PRect;
     NormalOpacity, LowerOpacity: Byte;
   end;
 procedure BlendPixel(Target: TRouteRaster; X,Y: Integer; Color:TColor; Alpha:Byte);
@@ -50,6 +51,12 @@ begin
   Opacity:=(Target.NormalOpacity*Coverage+Target.LowerOpacity*(255-Coverage)+127) div 255;
   Alpha:=(Cardinal(Alpha)*Opacity+127) div 255;
   if Alpha=0 then Exit;
+  if Target.DirtyBounds<>nil then begin
+    Target.DirtyBounds^.Left:=Min(Target.DirtyBounds^.Left,X);
+    Target.DirtyBounds^.Top:=Min(Target.DirtyBounds^.Top,Y);
+    Target.DirtyBounds^.Right:=Max(Target.DirtyBounds^.Right,X+1);
+    Target.DirtyBounds^.Bottom:=Max(Target.DirtyBounds^.Bottom,Y+1);
+  end;
   D:=Target.Buffer.Data; Inc(D,NativeInt(Y)*Target.Buffer.Width+X); R:=GetRValue(ColorToRGB(Color)); G:=GetGValue(ColorToRGB(Color)); B:=GetBValue(ColorToRGB(Color));
   if Alpha=255 then begin D^.R:=R; D^.G:=G; D^.B:=B; D^.A:=255; Exit; end;
   SA:=Alpha; DA:=D^.A; N:=SA*255+DA*(255-SA); if N=0 then Exit;
@@ -214,7 +221,7 @@ begin
 end;
 procedure DrawRouteLayer(Document:TVectArtDocument; Target:TRouteRaster; const Motion:TMapRakuPluginRouteMotion; LayerIndex:Integer; MarkerImage:TVectArtRenderBuffer; RouteCache:PMapRakuRouteProgressData);
 var I:Integer; P,PP:TPointF; T:TPointF; L,Current:TVectArtPathLayer; R:TMapRakuRouteProgressData; E:string; Scale,Angle:Single; Alpha:Byte; A,B,C:TPointF; MarkerRaster:TRouteRaster;
-  X,Y:Integer; Pixel:PVectArtRgbaPixel;
+  X,Y:Integer; Pixel:PVectArtRgbaPixel; Dirty:TRect;
 begin
   if (Document=nil)or(Target.Buffer=nil)or(Target.Buffer.Width<=0)or(Target.Buffer.Height<=0)or(Document.CanvasLayer.Width<=0)or(Document.CanvasLayer.Height<=0) then Exit;
   L:=nil; if RouteCache=nil then for I:=0 to Document.LayerCount-1 do if (Document[I] is TVectArtPathLayer)and(TVectArtPathLayer(Document[I]).MapElement='route') then begin L:=TVectArtPathLayer(Document[I]); Break; end;
@@ -235,6 +242,8 @@ begin
   ApplyMapRakuPluginMarkerAnimation(Motion,PP,Angle,PP,Angle);
   MarkerRaster.Buffer:=TVectArtRenderBuffer.Create;
   MarkerRaster.Mask:=nil;
+  Dirty:=Rect(Target.Buffer.Width,Target.Buffer.Height,0,0);
+  MarkerRaster.DirtyBounds:=@Dirty;
   MarkerRaster.NormalOpacity:=255;
   MarkerRaster.LowerOpacity:=0;
   try
@@ -252,12 +261,13 @@ begin
       Alpha);
     // ピンの縁・本体や画像・ポインターの重なりで透明度が変わらないよう、
     // マーカー全体を組み立ててから一度だけ透明度と交差マスクを適用する。
-    Pixel:=MarkerRaster.Buffer.Data;
-    for Y:=0 to Target.Buffer.Height-1 do
-      for X:=0 to Target.Buffer.Width-1 do begin
+    for Y:=Dirty.Top to Dirty.Bottom-1 do begin
+      Pixel:=MarkerRaster.Buffer.Data; Inc(Pixel,NativeInt(Y)*Target.Buffer.Width+Dirty.Left);
+      for X:=Dirty.Left to Dirty.Right-1 do begin
         if Pixel^.A<>0 then BlendImagePixel(Target,X,Y,Pixel^,255);
         Inc(Pixel);
       end;
+    end;
   finally MarkerRaster.Buffer.Free; end;
 end;
 procedure DrawMapRakuPluginRouteLayer(Document: TVectArtDocument;
@@ -272,6 +282,7 @@ begin
     (LayerIndex>=Document.LayerCount) or
     (Document.CanvasLayer.Width<=0) or (Document.CanvasLayer.Height<=0) then Exit;
   Raster.Buffer:=Target;
+  Raster.DirtyBounds:=nil;
   Raster.Mask:=ClipMask;
   // 軌跡は従来どおり高架下を切り抜き、マーカー描画時だけ設定値へ切り替える。
   Raster.NormalOpacity:=255;

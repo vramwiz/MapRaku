@@ -53,7 +53,8 @@ procedure RenderMapRakuPluginViewport(Document: TVectArtDocument;
 var
   Width, Height, DisplayWidth, DisplayHeight, DisplayX, DisplayY,
     Left, Top, Right, Bottom: Integer;
-  OffsetX, OffsetY, X, Y: Integer;
+  OffsetX, OffsetY, X, Y, CopyLeft,CopyTop,CopyRight,CopyBottom: Integer;
+  Src,Dst:PVectArtRgbaPixel;
   Scale, CenterX, CenterY, MapCenterX, MapCenterY,
     ScaledLeft, ScaledRight, ScaledTop,
     ScaledBottom, Threshold, SourceX, SourceY: Double;
@@ -111,8 +112,17 @@ begin
     else OffsetY := 0;
   end;
   if SameValue(Scale, 1.0) then
-    CompositeVectArtRgbaOffset(Source, Target.Data, Width, Height,
-      DisplayX + OffsetX, DisplayY + OffsetY)
+  begin
+    OffsetX:=OffsetX+DisplayX; OffsetY:=OffsetY+DisplayY;
+    CopyLeft:=Max(Max(Left,0),OffsetX); CopyRight:=Min(Min(Right,Width),Width+OffsetX);
+    CopyTop:=Max(Max(Top,0),OffsetY); CopyBottom:=Min(Min(Bottom,Height),Height+OffsetY);
+    if CopyRight>CopyLeft then
+      for Y:=CopyTop to CopyBottom-1 do begin
+        Src:=Source.Data; Inc(Src,NativeInt(Y-OffsetY)*Width+CopyLeft-OffsetX);
+        Dst:=Target.Data; Inc(Dst,NativeInt(Y)*Width+CopyLeft);
+        Move(Src^,Dst^,(CopyRight-CopyLeft)*SizeOf(TVectArtRgbaPixel));
+      end;
+  end
   else
     for Y := Max(Top, 0) to Min(Bottom, Height) - 1 do
     begin
@@ -124,12 +134,6 @@ begin
           SampleScaledPixel(Source, SourceX, SourceY);
       end;
     end;
-  if SameValue(Scale, 1.0) then
-    for Y := 0 to Height - 1 do
-      for X := 0 to Width - 1 do
-        if (X < Left) or (X >= Right) or (Y < Top) or (Y >= Bottom) then
-          Target.Pixels[NativeInt(Y) * Width + X] :=
-            Default(TVectArtRgbaPixel);
 end;
 
 end.

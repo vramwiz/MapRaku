@@ -3,7 +3,7 @@
         <ProjectGuid>{5C520506-60EA-43D9-B5DD-5A44E6665F25}</ProjectGuid>
         <ProjectVersion>20.4</ProjectVersion>
         <FrameworkType>None</FrameworkType>
-        <Config Condition="'$(Config)'==''">Release</Config>
+        <Config Condition="'$(Config)'==''">Debug</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
         <ProjectName Condition="'$(ProjectName)'==''">SYNC_MapRaku_Filter</ProjectName>
         <TargetedPlatforms>2</TargetedPlatforms>
@@ -22,6 +22,7 @@
     <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win64)'!=''">
         <Cfg_1_Win64>true</Cfg_1_Win64>
         <CfgParent>Cfg_1</CfgParent>
+        <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
         <Cfg_1>true</Cfg_1>
         <Base>true</Base>
     </PropertyGroup>
@@ -59,12 +60,6 @@
         <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
         <PostBuildEvent><![CDATA[copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\sk4d.dll"&&copy /Y "$(MSBuildProjectDirectory)\Win64\Plugin\$(Config)\SYNC_MapRaku_Filter.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\SYNC_MapRaku_Filter.auf2"&&copy /Y "$(MSBuildProjectDirectory)\Lib\Skia\Win64\sk4d.dll" "C:\ProgramData\aviutl2\Plugin\SYNC_MapRaku\sk4d.dll"]]></PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
-    </PropertyGroup>
-    <PropertyGroup Condition="'$(Config)'=='Debug'">
-        <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
-        <DCC_DebugInformation>1</DCC_DebugInformation>
-        <DCC_LocalDebugSymbols>true</DCC_LocalDebugSymbols>
-        <DCC_Optimize>false</DCC_Optimize>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">

@@ -11,7 +11,7 @@ implementation
 uses System.SysUtils, System.Classes, System.UITypes, System.Types, System.Math,
   System.JSON, System.Skia, Winapi.Windows, System.IOUtils, System.Diagnostics,
   Vcl.Forms, Vcl.ExtCtrls, Vcl.StdCtrls, Vcl.Graphics,
-  AviUtl2FilterTypes, MapRakuDocument, MapRakuDocumentJson,
+  MapRakuFrameCapture, Winapi.DXGIFormat, AviUtl2FilterTypes, MapRakuDocument, MapRakuDocumentJson,
   MapRakuPluginDocument, MapRakuFilterContext, MapRakuPluginRender,
   MapRakuPluginRouteMarker, MapRakuPluginViewport, MapRakuCanvasPreview,
   MapRakuRenderer, MapRakuEditorHost, MapRakuMainForm, MapRakuCanvas,
@@ -636,6 +636,79 @@ begin
   Writeln('PASS independent normal/underpass transparency 0/50/100, PNG alpha and unchanged trail');
 end;
 
+procedure TestGroupedRouteComposites;
+var Doc:TVectArtDocument; Context:TMapRakuFilterContext;
+  Motion,TrailMotion,MarkerMotion:TMapRakuPluginRouteMotion;
+  Video:TFILTER_PROC_VIDEO; Obj:TOBJECT_INFO; Data:TVectArtPathData;
+  Overlay,Layer,Markers,Viewport,Expected:TVectArtRenderBuffer;
+  I,J,First,Mode,Display,Progress:Integer; Indices:TArray<Integer>;
+  V:TArray<TMapRakuVertex>; Bytes:PByte;
+  procedure LegacyRender;
+  var K:Integer;
+  begin
+    Overlay.SetSize(W,H); Overlay.Clear; First:=1;
+    TrailMotion:=Motion; TrailMotion.DrawMarker:=False;
+    for K in Indices do begin
+      RenderMapRakuPluginRange(Doc,Layer,W,H,First,K);
+      CompositeVectArtRgba(Layer,Overlay.Data,W,H);
+      Layer.Clear;
+      DrawMapRakuPluginRouteLayer(Doc,Layer,TrailMotion,K,nil);
+      CompositeVectArtRgba(Layer,Overlay.Data,W,H); First:=K+1;
+    end;
+    RenderMapRakuPluginRange(Doc,Layer,W,H,First,Doc.LayerCount-1);
+    CompositeVectArtRgba(Layer,Overlay.Data,W,H);
+    Markers.SetSize(W,H); Markers.Clear;
+    MarkerMotion:=Motion; MarkerMotion.RouteDisplay:=0; MarkerMotion.DrawMarker:=True;
+    for K in Indices do DrawMapRakuPluginRouteLayer(Doc,Markers,MarkerMotion,K,nil);
+    CompositeVectArtRgba(Markers,Overlay.Data,W,H);
+    RenderMapRakuPluginViewport(Doc,Overlay,Viewport,Motion);
+    Expected.SetSize(W,H); GetImage(PPIXEL_RGBA(Expected.Data));
+    CompositeVectArtRgba(Viewport,Expected.Data,W,H);
+  end;
+begin
+  for Mode:=0 to 2 do begin
+    Doc:=TVectArtDocument.Create; Context:=TMapRakuFilterContext.Create;
+    Overlay:=TVectArtRenderBuffer.Create; Layer:=TVectArtRenderBuffer.Create;
+    Markers:=TVectArtRenderBuffer.Create; Viewport:=TVectArtRenderBuffer.Create;
+    Expected:=TVectArtRenderBuffer.Create;
+    try
+      AddRouteCrossingFixture(Doc);
+      V:=TVectArtPathLayer(Doc[1]).Vertices; V[1].Position:=PointF(0,0);
+      TVectArtPathLayer(Doc[1]).Vertices:=V;
+      Data:=Default(TVectArtPathData); Data.Visible:=True; Data.Opacity:=1;
+      Data.StrokeWidth:=6; Data.MapElement:='route'; Data.RouteId:='crossing-test';
+      Data.Vertices:=Copy(V); Data.Vertices[0].Position:=PointF(0,0);
+      Data.Vertices[1].Position:=PointF(35,0); Doc.InsertPath(2,Data);
+      if Mode=1 then Doc.InsertLayer(2,TMapRakuLevelBoundaryLayer.Create);
+      if Mode=2 then Doc.InsertLayer(2,TVectArtRectangleLayer.Create('occluder',RectF(-8,-8,8,8),clGreen));
+      Indices:=nil;
+      for I:=1 to Doc.LayerCount-1 do
+        if (Doc[I] is TVectArtPathLayer) and (TVectArtPathLayer(Doc[I]).MapElement='route') then
+          Indices:=Indices+[I];
+      Obj:=Default(TOBJECT_INFO); Obj.Width:=W; Obj.Height:=H;
+      Video:=Default(TFILTER_PROC_VIDEO); Video.Object_:=@Obj;
+      Video.GetImageData:=GetImage; Video.SetImageData:=SetImage;
+      Motion:=Default(TMapRakuPluginRouteMotion); Motion.MarkerScale:=100;
+      Motion.MarkerColor:=clBlue; Motion.RouteColor:=clRed;
+      Motion.MarkerUnderpassTransparency:=100; Motion.DisplayScale:=100;
+      Check(Context.UpdateSerializedData(SerializeVectArtDocument(Doc)),'Grouped fixture');
+      for Display:=0 to 1 do
+        for Progress in [0,30,50,70,100] do begin
+          Motion.RouteDisplay:=Display; Motion.ProgressPercent:=Progress;
+          LegacyRender;
+          Check(Context.RenderVideo(@Video,Motion),'Grouped render');
+          if Mode=0 then Check(Context.RouteCompositeGroupCount=1,'Same-height adjacent routes should merge')
+          else Check(Context.RouteCompositeGroupCount=2,'Height and occluders must separate groups');
+          Bytes:=PByte(Expected.Data);
+          for J:=0 to Length(Returned)-1 do
+            Check(Abs(Integer(Returned[J])-Integer(Bytes[J]))<=1,
+              Format('Grouped pixel parity mode=%d display=%d progress=%d byte=%d',[Mode,Display,Progress,J]));
+        end;
+    finally Expected.Free; Viewport.Free; Markers.Free; Layer.Free; Overlay.Free;
+      Context.Free; Doc.Free; end;
+  end;
+  Writeln('PASS grouped route composites match legacy pixels, height boundaries, occluders, no trail, seeks');
+end;
 procedure TestRouteCrossingVideo;
 var Doc:TVectArtDocument; Context:TMapRakuFilterContext;
   Motion:TMapRakuPluginRouteMotion; Video:TFILTER_PROC_VIDEO; Obj:TOBJECT_INFO;
@@ -730,8 +803,33 @@ begin
       [FirstMs,Sum/120,Context.RouteBuildCount]));
   finally Context.Free; TTextRendererSkiaRuntime.Release; end;
 end;
+procedure TestFramebufferConversion;
+var Source, Pixels: TBytes; Format: DXGI_FORMAT;
+begin
+  for Format in [DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB] do begin
+    Source:=TBytes.Create(10,20,30,40,50,60,70,80);
+    Pixels:=ConvertMapRakuFramebufferToRgba(Source,1,2,Ord(Format));
+    Check((Length(Pixels)=8) and CompareMem(@Source[0],@Pixels[0],8),'RGBA background rows');
+    Pixels[0]:=99; Check(Source[0]=10,'Background copy owns pixels');
+  end;
+  for Format in [DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB] do begin
+    Pixels:=ConvertMapRakuFramebufferToRgba(Source,1,2,Ord(Format));
+    Check((Pixels[0]=30) and (Pixels[2]=10) and (Pixels[4]=70) and (Pixels[7]=80),'BGRA background rows');
+  end;
+  Source:=TBytes.Create(0,0,255,255,0,128,255,255,255,255,0,0,0,0,0,0);
+  Pixels:=ConvertMapRakuFramebufferToRgba(Source,1,2,Ord(DXGI_FORMAT_R16G16B16A16_UNORM));
+  Check((Pixels[0]=0) and (Pixels[1]=255) and (Pixels[2]=127) and (Pixels[3]=255) and (Pixels[4]=255) and (Pixels[7]=0),'UNORM16 background rows and alpha');
+  Source:=TBytes.Create(0,0,0,$3C,0,$38,0,$3C,0,$40,0,$BC,0,0,0,$38);
+  Pixels:=ConvertMapRakuFramebufferToRgba(Source,1,2,Ord(DXGI_FORMAT_R16G16B16A16_FLOAT));
+  Check((Pixels[0]=0) and (Pixels[1]=255) and (Pixels[2]=128) and (Pixels[3]=255) and (Pixels[4]=255) and (Pixels[5]=0) and (Pixels[7]=128),'FLOAT16 background rows, clamp and alpha');
+  Check(Length(ConvertMapRakuFramebufferToRgba(Source,2,2,Ord(DXGI_FORMAT_R16G16B16A16_FLOAT)))=0,'Reject short background buffer');
+  Check(Length(ConvertMapRakuFramebufferToRgba(Source,1,2,0))=0,'Reject unsupported background format');
+  Writeln('PASS deferred background conversion: RGBA/BGRA/UNORM16/FLOAT16, rows, alpha, independent copy');
+end;
+
 procedure RunPluginTests(const PluginFile: string);
 begin
+  TestFramebufferConversion;
   TTextRendererSkiaRuntime.Acquire(BundledSkiaRuntimeFileName);
   try
     TestContexts;
@@ -740,6 +838,7 @@ begin
     TestRouteCrossingSegments;
     TestMarkerTransparency;
     TestRouteCrossingVideo;
+    TestGroupedRouteComposites;
     TestBackgrounds;
     TestDisplayScale;
     TestModal;
