@@ -3,7 +3,7 @@
         <ProjectGuid>{5C520506-60EA-43D9-B5DD-5A44E6665F25}</ProjectGuid>
         <ProjectVersion>20.4</ProjectVersion>
         <FrameworkType>None</FrameworkType>
-        <Config Condition="'$(Config)'==''">Debug</Config>
+        <Config Condition="'$(Config)'==''">Release</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
         <ProjectName Condition="'$(ProjectName)'==''">SYNC_MapRaku_Filter</ProjectName>
         <TargetedPlatforms>2</TargetedPlatforms>
@@ -22,7 +22,6 @@
     <PropertyGroup Condition="('$(Platform)'=='Win64' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win64)'!=''">
         <Cfg_1_Win64>true</Cfg_1_Win64>
         <CfgParent>Cfg_1</CfgParent>
-        <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
         <Cfg_1>true</Cfg_1>
         <Base>true</Base>
     </PropertyGroup>

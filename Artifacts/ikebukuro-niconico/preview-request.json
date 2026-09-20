@@ -1,0 +1,338 @@
+{
+  "background_token": "{882AB72B-C7AB-4B17-9774-D8CCB4494E38}",
+  "state_token": "sha256:2ff5ecc1df50299ff7b7bb5d13a54c3c2949246817df28259c5203238cb27b14",
+  "operations": [
+    {
+      "spec": {
+        "background": 15923450,
+        "jr_primary": 4536358,
+        "jr_secondary": 15923450,
+        "transparent": false,
+        "height": 1080,
+        "width": 1920
+      },
+      "op": "canvas"
+    },
+    {
+      "spec": {
+        "color": 13749701,
+        "line_cap": 0,
+        "vertices": [
+          {
+            "x": 55,
+            "y": 325
+          },
+          {
+            "x": 395,
+            "y": 325
+          },
+          {
+            "x": 630,
+            "y": 270
+          },
+          {
+            "x": 885,
+            "y": 445
+          }
+        ],
+        "name": "明治通り",
+        "kind": "road",
+        "id": "meiji",
+        "width": 44
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "color": 13749701,
+        "line_cap": 0,
+        "vertices": [
+          {
+            "x": 630,
+            "y": 270
+          },
+          {
+            "x": 615,
+            "y": 125
+          },
+          {
+            "x": 555,
+            "y": 65
+          },
+          {
+            "x": 555,
+            "y": -85
+          }
+        ],
+        "name": "PARCO本館前・P＇PARCOへの道",
+        "kind": "road",
+        "id": "parco-front",
+        "width": 30
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "color": 13749701,
+        "line_cap": 0,
+        "vertices": [
+          {
+            "x": 615,
+            "y": 125
+          },
+          {
+            "x": 790,
+            "y": 65
+          },
+          {
+            "x": 840,
+            "y": 85
+          },
+          {
+            "x": 915,
+            "y": 85
+          }
+        ],
+        "name": "P＇PARCO前の道路",
+        "kind": "road",
+        "id": "pparco-front",
+        "width": 30
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "color": 11120016,
+        "line_cap": 0,
+        "vertices": [
+          {
+            "x": 555,
+            "y": -85
+          },
+          {
+            "x": 555,
+            "y": -290
+          }
+        ],
+        "name": "ウイロード（歩行者通路）",
+        "kind": "road",
+        "id": "we-road",
+        "width": 18
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "line_cap": 0,
+        "vertices": [
+          {
+            "x": 40,
+            "y": -220
+          },
+          {
+            "x": 915,
+            "y": -220
+          }
+        ],
+        "name": "JR線（模式）",
+        "kind": "jr",
+        "id": "jr-ikebukuro",
+        "width": 22
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "color": 4536358,
+        "font_size": 49,
+        "label": "池袋駅",
+        "kind": "building",
+        "text_color": 16777215,
+        "width": 390.0,
+        "name": "池袋駅",
+        "x": 275.0,
+        "height": 96.0,
+        "y": -220.0,
+        "id": "station"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "color": 14935516,
+        "font_size": 33,
+        "label": "PARCO 本館",
+        "kind": "building",
+        "text_color": 4536358,
+        "width": 350.0,
+        "name": "PARCO 本館",
+        "x": 340.0,
+        "height": 100.0,
+        "y": 150.0,
+        "id": "parco-main"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "color": 4344295,
+        "font_size": 39,
+        "label": "P＇PARCO",
+        "kind": "building",
+        "text_color": 16777215,
+        "width": 270.0,
+        "name": "P＇PARCO",
+        "x": 745.0,
+        "height": 110.0,
+        "y": -25.0,
+        "id": "pparco"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "font": "Yu Gothic UI",
+        "color": 4344295,
+        "font_size": 47,
+        "text": "ニコニコ本社",
+        "kind": "text",
+        "width": 335.0,
+        "name": "ニコニコ本社",
+        "x": 595.0,
+        "height": 70.0,
+        "y": -370.0,
+        "id": "destination-name"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "font": "Yu Gothic UI",
+        "color": 4536358,
+        "font_size": 24,
+        "text": "旧・池袋アンテナショップ",
+        "kind": "text",
+        "width": 355.0,
+        "name": "旧・池袋アンテナショップ",
+        "x": 575.0,
+        "height": 46.0,
+        "y": -302.0,
+        "id": "destination-detail"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "font": "Yu Gothic UI",
+        "color": 4344295,
+        "font_size": 27,
+        "text": "B1F・B2F",
+        "kind": "text",
+        "width": 210.0,
+        "name": "B1F・B2F",
+        "x": 658.0,
+        "height": 40.0,
+        "y": -130.0,
+        "id": "destination-floor"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "font": "Yu Gothic UI",
+        "color": 4536358,
+        "font_size": 33,
+        "text": "東口",
+        "kind": "text",
+        "width": 150.0,
+        "name": "東口",
+        "x": 110.0,
+        "height": 55.0,
+        "y": -95.0,
+        "id": "east-exit"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "font": "Yu Gothic UI",
+        "color": 7698769,
+        "font_size": 23,
+        "text": "ウイロード",
+        "kind": "text",
+        "width": 175.0,
+        "name": "ウイロード",
+        "x": 382.0,
+        "height": 40.0,
+        "y": -150.0,
+        "id": "we-road-label"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "font": "Yu Gothic UI",
+        "color": 4536358,
+        "font_size": 29,
+        "text": "明治通り",
+        "kind": "text",
+        "width": 205.0,
+        "name": "明治通り",
+        "x": 100.0,
+        "height": 48.0,
+        "y": 366.0,
+        "id": "meiji-label"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "font": "Yu Gothic UI",
+        "color": 4536358,
+        "font_size": 29,
+        "text": "JR線",
+        "kind": "text",
+        "width": 160.0,
+        "name": "JR線",
+        "x": 100.0,
+        "height": 45.0,
+        "y": -305.0,
+        "id": "jr-label"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "font": "Yu Gothic UI",
+        "color": 4536358,
+        "font_size": 29,
+        "text": "北 →",
+        "kind": "text",
+        "width": 135.0,
+        "name": "北 →",
+        "x": 777.0,
+        "height": 50.0,
+        "y": -465.0,
+        "id": "north-label"
+      },
+      "op": "add"
+    },
+    {
+      "spec": {
+        "font": "Yu Gothic UI",
+        "color": 7959911,
+        "font_size": 20,
+        "text": "位置関係を簡略化した案内図・縮尺は一定ではありません",
+        "kind": "text",
+        "width": 845.0,
+        "name": "位置関係を簡略化した案内図・縮尺は一定ではありません",
+        "x": 70.0,
+        "height": 38.0,
+        "y": 462.0,
+        "id": "map-note"
+      },
+      "op": "add"
+    }
+  ],
+  "command": "preview_batch"
+}

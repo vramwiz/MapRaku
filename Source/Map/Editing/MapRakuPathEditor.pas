@@ -270,8 +270,39 @@ begin
 end;
 procedure TMapPathEditor.Draw(Canvas:TCustomCanvas);
 var V:TArray<TMapRakuVertex>; I:Integer; P,Q:TPoint; Path:TVectArtPathLayer;
+  procedure DrawEditedRoute;
+  var Segment: TArray<TMapRakuVertex>; Points: TArray<TPointF>;
+    procedure Stroke(Color: TColor; Width: Integer);
+    var K, SegmentIndex: Integer;
+    begin
+      if Canvas is TCanvas then begin
+        TCanvas(Canvas).Pen.Color:=Color; TCanvas(Canvas).Pen.Width:=Width;
+      end else if Canvas is TDirect2DCanvas then begin
+        TDirect2DCanvas(Canvas).Pen.Color:=Color;
+        TDirect2DCanvas(Canvas).Pen.Width:=Width;
+      end;
+      for SegmentIndex:=0 to High(V)-1 do begin
+        Segment:=[V[SegmentIndex],V[SegmentIndex+1]];
+        Points:=FlattenMapRakuPathVertices(Segment,32);
+        if Length(Points)<2 then Continue;
+        P:=ScreenPoint(Points[0]); Canvas.MoveTo(P.X,P.Y);
+        for K:=1 to High(Points) do begin
+          P:=ScreenPoint(Points[K]); Canvas.LineTo(P.X,P.Y);
+        end;
+      end;
+    end;
+  begin
+    // 踏切の通常表示は線路模様を優先するが、点編集中のルートは
+    // 操作対象を見失わないよう最前面へ描き直す。保存時の重なり順は変えない。
+    if (FLayer=nil) or (FLayer.MapElement<>'route') then Exit;
+    V:=FLayer.Vertices;
+    if Length(V)<2 then Exit;
+    Stroke($00D0D0D0,Max(1,Round(FLayer.StrokeWidth*FZoom)+2));
+    Stroke(FLayer.StrokeColor,Max(1,Round(FLayer.StrokeWidth*FZoom)));
+  end;
 begin
   if Length(FCandidates)=0 then Exit;
+  DrawEditedRoute;
   if Canvas is TCanvas then begin
     TCanvas(Canvas).Pen.Color:=clBlack; TCanvas(Canvas).Pen.Width:=1; TCanvas(Canvas).Brush.Color:=clWhite;
   end else if Canvas is TDirect2DCanvas then begin

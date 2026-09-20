@@ -1,0 +1,33 @@
+{
+  "protocol": "MapRaku",
+  "protocol_version": 2,
+  "pipe_name": "MapRaku.Plugin.14976.{AD540E6D-B6A5-45FC-8D4B-3B4E8CB6F673}",
+  "host_kind": "aviutl2",
+  "process_id": 14976,
+  "command": "get_document",
+  "status": "ok",
+  "snapshot": {
+    "state_token": "sha256:2ff5ecc1df50299ff7b7bb5d13a54c3c2949246817df28259c5203238cb27b14",
+    "document": {
+      "appId": "MapRaku",
+      "version": 1,
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "origin": "center",
+        "backgroundColor": 15726586,
+        "transparent": true,
+        "roadPresetColor": 15000804,
+        "riverPresetColor": 15245392,
+        "routePresetColor": 255,
+        "jrPrimaryColor": 4602917,
+        "jrSecondaryColor": 15726586,
+        "railPrimaryColor": 2236962,
+        "railSecondaryColor": 2236962
+      },
+      "layers": [],
+      "crossingRelations": [],
+      "selectedIndex": -1
+    }
+  }
+}

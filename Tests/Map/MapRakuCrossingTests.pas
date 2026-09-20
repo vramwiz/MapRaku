@@ -160,6 +160,18 @@ begin
           (B.Pixels[150*400+220].R<10),'Gap must preserve unrelated background');
       finally D.Free; end;
     end;
+    // ルートは案内線なので、線路より前面に置いた場合はレイヤー順を優先する。
+    D:=TVectArtDocument.Create;
+    try
+      D.CanvasLayer.Width:=400; D.CanvasLayer.Height:=300;
+      Data:=Road('rail',PointF(0,-120),PointF(0,120)); Data.StrokeColor:=clBlack;
+      D.InsertPath(1,Data);
+      Data:=Road('route',PointF(-160,0),PointF(160,0)); Data.StrokeColor:=clRed;
+      D.InsertPath(2,Data);
+      RenderVectArtDocument(D,B,400,300);
+      Check((B.Pixels[150*400+200].R>240) and (B.Pixels[150*400+200].G<10),
+        'Route above railway must remain above at the crossing');
+    finally D.Free; end;
     // グループ内の経路も同じ永続IDで交差対象にする。
     D:=TVectArtDocument.Create;
     try

@@ -45,6 +45,11 @@ begin
   Result := SameText(S, 'jr') or SameText(S, 'rail');
 end;
 
+function IsRoute(const S: string): Boolean;
+begin
+  Result := SameText(S, 'route');
+end;
+
 function IsCrossingPath(const S:string):Boolean;
 begin
   Result:=SameText(S,'road') or SameText(S,'route') or IsRail(S) or SameText(S,'river');
@@ -122,8 +127,11 @@ begin
               C:=Default(TMapRakuCrossing); C.ObjectAId:=A.PersistentId;
               C.ObjectBId:=B.PersistentId; C.Position:=P;
               C.Kind:=CrossingKind(A,B,SameLevel); C.UpperObjectId:=B.PersistentId;
-              // 同層の踏切は線路、川との橋は道路を上に描く。
-              if (C.Kind=mckRailroadCrossing) and IsRail(A.MapElement) then
+              // ルートはレイヤー順で上下を決める。道路の踏切は従来どおり
+              // 線路を優先し、ルートを線路より前面へ置けば案内線を隠さない。
+              if (C.Kind=mckRailroadCrossing) and not
+                (IsRoute(A.MapElement) or IsRoute(B.MapElement)) and
+                IsRail(A.MapElement) then
                 C.UpperObjectId:=A.PersistentId;
               if (C.Kind=mckBridge) and SameText(A.MapElement,'road') then
                 C.UpperObjectId:=A.PersistentId;
@@ -134,7 +142,8 @@ begin
                 C.Kind:=OverrideRelation.Kind;
                 C.UpperObjectId:=OverrideRelation.UpperObjectId;
               end;
-              if C.Kind=mckRailroadCrossing then begin
+              if (C.Kind=mckRailroadCrossing) and ((OverrideRelation<>nil) or
+                not (IsRoute(A.MapElement) or IsRoute(B.MapElement))) then begin
                 if IsRail(A.MapElement) then C.UpperObjectId:=A.PersistentId
                 else if IsRail(B.MapElement) then C.UpperObjectId:=B.PersistentId;
               end;

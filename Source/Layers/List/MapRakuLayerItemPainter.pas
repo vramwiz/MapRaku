@@ -5,7 +5,7 @@ unit MapRakuLayerItemPainter;
 interface
 
 uses
-  System.Types, Vcl.Direct2D, Vcl.Graphics,
+  System.Types, System.UITypes, Vcl.Direct2D, Vcl.Graphics,
   MapRakuDocument, MapRakuEditorState, MapRakuLayerThumbnailCache;
 
 type
@@ -86,6 +86,8 @@ var
   Column: Integer;
   ExpandPoints: array[0..2] of TPoint;
   ExpandRect: TRect;
+  PreviousFontHeight: Integer;
+  PreviousFontStyle: TFontStyles;
   LockRect: TRect;
   Row: Integer;
   ThumbnailArea: TRect;
@@ -107,6 +109,11 @@ begin
   ACanvas.FrameRect(ItemRect);
   if Layer is TMapRakuLevelBoundaryLayer then
   begin
+    PreviousFontHeight := ACanvas.Font.Height;
+    PreviousFontStyle := ACanvas.Font.Style;
+    // TextOutは親Canvasのフォントをそのまま使うため、DPI変更後に
+    // 高さが二重に拡大されないよう一覧と同じ96 DPI基準で明示する。
+    ACanvas.Font.Height := -Scale(12);
     ACanvas.Font.Color := COLOR_TEXT_PRIMARY;
     ACanvas.Font.Style := [fsBold];
     ACanvas.Brush.Style := bsClear;
@@ -115,7 +122,8 @@ begin
     ACanvas.Pen.Color := COLOR_TEXT_SECONDARY;
     ACanvas.MoveTo(ItemRect.Left + Scale(10), ItemRect.Bottom - Scale(8));
     ACanvas.LineTo(ItemRect.Right - Scale(10), ItemRect.Bottom - Scale(8));
-    ACanvas.Font.Style := [];
+    ACanvas.Font.Height := PreviousFontHeight;
+    ACanvas.Font.Style := PreviousFontStyle;
     Exit;
   end;
   if Active then
@@ -244,6 +252,8 @@ var
   Column: Integer;
   ExpandPoints: array[0..2] of TPoint;
   ExpandRect: TRect;
+  PreviousFontHeight: Integer;
+  PreviousFontStyle: TFontStyles;
   LockRect: TRect;
   Row: Integer;
   ThumbnailArea: TRect;
@@ -265,6 +275,11 @@ begin
   ACanvas.FrameRect(ItemRect);
   if Layer is TMapRakuLevelBoundaryLayer then
   begin
+    PreviousFontHeight := ACanvas.Font.Height;
+    PreviousFontStyle := ACanvas.Font.Style;
+    // Direct2Dも行矩形と同じ倍率のフォントを使い、継承フォントの
+    // DPI値を再解釈して過大な文字になることを防ぐ。
+    ACanvas.Font.Height := -Scale(12);
     ACanvas.Font.Color := COLOR_TEXT_PRIMARY;
     ACanvas.Font.Style := [fsBold];
     ACanvas.Brush.Style := bsClear;
@@ -273,7 +288,8 @@ begin
     ACanvas.Pen.Color := COLOR_TEXT_SECONDARY;
     ACanvas.MoveTo(ItemRect.Left + Scale(10), ItemRect.Bottom - Scale(8));
     ACanvas.LineTo(ItemRect.Right - Scale(10), ItemRect.Bottom - Scale(8));
-    ACanvas.Font.Style := [];
+    ACanvas.Font.Height := PreviousFontHeight;
+    ACanvas.Font.Style := PreviousFontStyle;
     Exit;
   end;
   if Active then
