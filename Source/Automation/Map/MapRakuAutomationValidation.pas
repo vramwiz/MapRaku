@@ -8,9 +8,15 @@ uses System.SysUtils, System.Math, System.Generics.Collections,
   MapRakuAutomationValues;
 procedure CheckLayer(L: TVectArtLayer; Ids: TDictionary<string,TVectArtLayer>;
   Warnings: TJSONArray; Depth: Integer);
-var I: Integer; P: TVectArtPathLayer; V: TMapRakuVertex;
+var I: Integer; P: TVectArtPathLayer; S: TMapRakuShapeLayer; V: TMapRakuVertex;
   function Finite(N: Single): Boolean;
   begin Result := not IsNan(N) and not IsInfinite(N) and (Abs(N) <= 1000000); end;
+  procedure CheckVertex(const Vertex: TMapRakuVertex);
+  begin
+    Require(Finite(Vertex.Position.X) and Finite(Vertex.Position.Y) and
+      Finite(Vertex.IncomingControl.X) and Finite(Vertex.IncomingControl.Y) and
+      Finite(Vertex.OutgoingControl.X) and Finite(Vertex.OutgoingControl.Y), 'Invalid vertex coordinate.');
+  end;
 begin
   Require(Depth <= 32, 'Group nesting exceeds 32.');
   Require((L.PersistentId <> '') and not Ids.ContainsKey(L.PersistentId), 'Missing or duplicate layer id.');
@@ -19,12 +25,16 @@ begin
     P := TVectArtPathLayer(L);
     Require(Length(P.Vertices) >= 2, 'Path requires at least two vertices: '+L.PersistentId);
     Require(Finite(P.StrokeWidth) and (P.StrokeWidth > 0), 'Invalid path width.');
-    for V in P.Vertices do
-      Require(Finite(V.Position.X) and Finite(V.Position.Y) and
-        Finite(V.IncomingControl.X) and Finite(V.IncomingControl.Y) and
-        Finite(V.OutgoingControl.X) and Finite(V.OutgoingControl.Y), 'Invalid vertex coordinate.');
+    for V in P.Vertices do CheckVertex(V);
     if (P.MapElement <> '') and P.Closed then
       Warnings.Add('Closed map path: '+L.PersistentId);
+  end;
+  if L is TMapRakuShapeLayer then begin
+    S := TMapRakuShapeLayer(L);
+    Require(Finite(S.StrokeWidth) and (S.StrokeWidth>=0), 'Invalid polygon outline width.');
+    for var Contour in S.Contours do begin
+      for V in Contour.Vertices do CheckVertex(V);
+    end;
   end;
   if L is TMapRakuGroupLayer then
     for I := 0 to TMapRakuGroupLayer(L).ChildCount - 1 do

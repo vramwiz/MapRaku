@@ -14,7 +14,7 @@ begin
     '"reference":"pre-oriented and cropped PNG, same aspect ratio as canvas; north clockwise from screen up",'+
     '"operations":["canvas","add","update","delete","connect","crossing","remove_crossing"],'+
     '"canvas_fields":["width","height","background","transparent","road_color","river_color","jr_primary","jr_secondary","rail_primary","rail_secondary"],'+
-    '"kinds":["road","jr","rail","river","symbol","building","text","rectangle","ellipse","level_boundary"],'+
+    '"kinds":["road","jr","rail","river","symbol","building","text","rectangle","ellipse","polygon","level_boundary"],'+
     '"common_fields":["kind","id","name","opacity"],'+
     '"path_fields":["vertices","width","color","line_cap"],'+
     '"vertex_fields":["x","y","incomingX","incomingY","outgoingX","outgoingY","kind","outgoingSegment"],'+
@@ -22,9 +22,13 @@ begin
     '"control_coordinates":"offset from vertex; vertices are document coordinates",'+
     '"rail_colors":"Set canvas palette; color on jr/rail paths is rejected",'+
     '"connect_example":{"op":"connect","id":"road-branch","endpoint":0,"target":"road-main","target_endpoint":1,"align":true},'+
+    '"connect_rules":"Both indexes must be the first (0) or last vertex, never an interior vertex; same connection family only. For a branch at an interior point, split the main path or let geometry touch without connect.",'+
     '"symbol_fields":["symbol","label","x","y","rotation"],'+
     '"building_fields":["x","y","width","height","label","color","text_color","font_size"],'+
-    '"text_fields":["x","y","width","height","text","font","font_size","color"],'+
+    '"text_fields":["x","y","width","height","text","font","font_size","color","rotation"],'+
+    '"polygon_fields":["vertices","color","stroke_color","stroke_width"],'+
+    '"polygon_rules":"Closed editable filled contour, at least 3 vertices; same absolute coordinate vertices as paths; stroke_width 0 omits outline. Use for irregular buildings, with separate text labels.",'+
+    '"text_rotation":"Degrees clockwise around the text box center; use line breaks for upright vertical character stacks.",'+
     '"shape_fields":["x","y","width","height","color"],'+
     '"position":"building and symbol: center; text and shapes: top-left",'+
     '"update_fields":["name","opacity","visible","dx","dy","vertices","width","color","text"],'+

@@ -25,7 +25,8 @@ uses
   MapRakuTextContextMenu, MapRakuPathContextMenu,
   MapRakuTransformContextMenu,
   MapRakuArrangementContextMenu,
-  PipeServerTThread, MapRakuAutomationPipeServer, Vcl.Graphics;
+  PipeServerTThread, MapRakuAutomationPipeServer, Vcl.Graphics,
+  MapRakuGenerationSession, MapRakuGenerationForm;
 
 const WM_MAPRAKU_RECENT_REFRESH = WM_APP + 101;
 
@@ -84,6 +85,11 @@ type
     FLayerMenuItem: TPanel;
     FObjectPropertiesMenuItem: TPanel;
     FRoutePreviewMenuItem: TPanel;
+    FGenerationSession: TMapRakuGenerationSession;
+    FGenerationForm: TMapRakuGenerationForm;
+    FLayerRefreshTimer: TTimer;
+    procedure ShowGeneration(Sender: TObject);
+    procedure RefreshLayerList(Sender: TObject);
     function ConfirmSave: Boolean;
     procedure FileNewClick(Sender: TObject);
     procedure ActivateToolShortcut(const Tool: TVectArtEditorTool);
@@ -257,6 +263,11 @@ begin
 
   FDocument := TVectArtDocument.Create;
   FDocument.OnChanged := DocumentChanged;
+  FLayerRefreshTimer := TTimer.Create(Self);
+  FLayerRefreshTimer.Name := 'LayerRefreshTimer';
+  FLayerRefreshTimer.Enabled := False;
+  FLayerRefreshTimer.Interval := 50;
+  FLayerRefreshTimer.OnTimer := RefreshLayerList;
   FEditorState := TVectArtEditorState.Create;
   FEditorState.OnChanged := EditorStateChanged;
   FEditHistory := TVectArtEditHistory.Create;
@@ -376,14 +387,28 @@ begin
   InitializeShortcuts;
   HistoryChanged(FEditHistory);
   EditorStateChanged(FEditorState);
+  FGenerationSession := TMapRakuGenerationSession.Create(FDocument,FEditHistory,
+    FEditorState,FEditorFrame.CanvasControl);
+  FGenerationSession.OnShow := ShowGeneration;
+  FEditActionsUI.OnGenerationRequest := ShowGeneration;
   FAutomationPipeStarted := StartMapRakuAutomationPipeServer(Handle,
-    FDocument, FEditHistory, FEditorState, FEditorFrame.CanvasControl, ErrorMessage, FHosted);
+    FDocument, FEditHistory, FEditorState, FEditorFrame.CanvasControl, ErrorMessage, FHosted,FGenerationSession);
   if not FAutomationPipeStarted then
   begin
     lblStatus.Caption := 'Codex pipe: ' + ErrorMessage;
     // 二重に開いた編集画面を既存セッションの接続先と誤認させない。
     if FHosted then raise EInvalidOp.Create(ErrorMessage);
   end;
+end;
+
+procedure TMainForm.ShowGeneration(Sender: TObject);
+begin
+  Show;
+  ShowWindow(Handle,SW_SHOWNORMAL);
+  if FGenerationForm=nil then
+    FGenerationForm := TMapRakuGenerationForm.CreateForSession(Self,FGenerationSession);
+  FGenerationForm.Show;
+  FGenerationForm.BringToFront;
 end;
 
 procedure TMainForm.CanvasSettingsRequest(Sender: TObject);
@@ -486,8 +511,6 @@ begin
   // ドラッグ中はCanvasだけを更新し、重い属性UIの再同期は操作確定時にまとめる。
   if (FDocument <> nil) and FDocument.IsInteractiveUpdate then
     Exit;
-  if FLayerFrame <> nil then
-    FLayerFrame.RefreshFromDocument;
   if FObjectPropertiesFrame <> nil then
     FObjectPropertiesFrame.RefreshFromDocument;
   if FLineToolbar <> nil then
@@ -706,8 +729,7 @@ begin
     FEditorFrame.CanvasControl.ApplyPathVertexModeToSelection;
     FEditorFrame.CanvasControl.Invalidate;
   end;
-  if FLayerFrame <> nil then
-    FLayerFrame.RefreshFromDocument;
+  RefreshLayerList(nil);
   if FObjectPropertiesFrame <> nil then
     FObjectPropertiesFrame.RefreshFromDocument;
   if FMapToolsPanel <> nil then
@@ -960,6 +982,17 @@ begin
     FEditActionsUI.RefreshState;
 end;
 
+procedure TMainForm.RefreshLayerList(Sender: TObject);
+var Deferred: Boolean;
+begin
+  if (FLayerFrame=nil) or (FLayerRefreshTimer=nil) then Exit;
+  // 文書変更と選択状態変更の両経路を集約し、操作中はサムネイルを作り直さない。
+  Deferred := (FDocument<>nil) and FDocument.IsInteractiveUpdate;
+  if FEditorFrame<>nil then Deferred := Deferred or FEditorFrame.CanvasControl.AutomationBusy;
+  FLayerRefreshTimer.Enabled := Deferred;
+  if not Deferred then FLayerFrame.RefreshFromDocument;
+end;
+
 function TMainForm.CanExecuteLayerAction(
   Action: TVectArtLayerAction): Boolean;
 var
@@ -1027,6 +1060,9 @@ begin
   end;
   if FFileDropCaptionEnabled then
     DragAcceptFiles(Handle, False);
+  FreeAndNil(FGenerationForm);
+  FreeAndNil(FGenerationSession);
+  FreeAndNil(FLayerRefreshTimer);
   SaveLayoutSettings;
   FreeAndNil(FRecentFiles);
   FreeAndNil(FShortcuts);

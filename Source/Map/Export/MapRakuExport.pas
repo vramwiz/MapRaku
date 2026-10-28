@@ -4,8 +4,9 @@ interface
 uses MapRakuDocument;
 procedure ExportMapSvg(Document: TVectArtDocument; const FileName: string);
 procedure ExportMapPng(Document: TVectArtDocument; const FileName: string);
+procedure ExportMapPreviewPng(Document: TVectArtDocument; const FileName: string; MaxEdge: Integer);
 implementation
-uses System.Classes, System.SysUtils, System.Types, System.UITypes,
+uses System.Classes, System.SysUtils, System.Types, System.UITypes, System.Math,
   System.Skia, System.Generics.Collections, Vcl.Graphics, MapRakuRenderer;
 procedure DrawDocument(Document: TVectArtDocument; const Canvas: ISkCanvas);
 var C: TColor; P: ISkPaint;
@@ -38,5 +39,16 @@ begin
   Surface.Canvas.Clear(TAlphaColorRec.Null);
   DrawDocument(Document, Surface.Canvas);
   Surface.MakeImageSnapshot.EncodeToFile(FileName, TSkEncodedImageFormat.PNG);
+end;
+procedure ExportMapPreviewPng(Document: TVectArtDocument; const FileName: string; MaxEdge: Integer);
+var Surface: ISkSurface; Scale: Single;
+begin
+  Scale := Min(1,MaxEdge/Max(Document.CanvasLayer.Width,Document.CanvasLayer.Height));
+  Surface := TSkSurface.MakeRaster(Max(1,Round(Document.CanvasLayer.Width*Scale)),
+    Max(1,Round(Document.CanvasLayer.Height*Scale)));
+  if Surface=nil then raise EInvalidOp.Create('プレビュー領域を作成できません');
+  Surface.Canvas.Clear(TAlphaColorRec.Null); Surface.Canvas.Scale(Scale,Scale);
+  DrawDocument(Document,Surface.Canvas);
+  Surface.MakeImageSnapshot.EncodeToFile(FileName,TSkEncodedImageFormat.PNG);
 end;
 end.

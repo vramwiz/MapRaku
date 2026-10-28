@@ -1,0 +1,19 @@
+{
+  "trace_options": {
+    "zoom": 1.15,
+    "pan_x": 0.02,
+    "pan_y": -0.01,
+    "rotation_degrees": -17.0,
+    "simplification": 80
+  },
+  "repair_attempted": false,
+  "original_unchanged_before_adoption": true,
+  "native_codex_image_trace": "passed",
+  "adopt_save_undo_redo": "passed",
+  "layers": 29,
+  "trace_options_token": "sha256:007189321266feaf458fba9dae569feedadaa73c3cfa1a1b15a3a5944b30dbbf",
+  "ui_input": "not used",
+  "host": "isolated shared plugin editor",
+  "source_image_sha256": "8bd60beb0c2a6a7cf3a731bcb02a17f63cd29a291d1f1fff72308603315685d4",
+  "trace_image_sha256": "b35f73f3bc839a2b6b6c50d8895b87f0e8f05907ef8d0fb83bd7dd93ffaf2229"
+}

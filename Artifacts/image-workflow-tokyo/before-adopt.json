@@ -1,0 +1,24 @@
+{
+  "state_token": "sha256:56d95e01d138c2780f695e3bd9c24b0634036a422d46f80a6df12f1283acd04b",
+  "document": {
+    "appId": "MapRaku",
+    "version": 1,
+    "canvas": {
+      "width": 1920,
+      "height": 1080,
+      "origin": "center",
+      "backgroundColor": 16777215,
+      "transparent": false,
+      "roadPresetColor": 15000804,
+      "riverPresetColor": 15245392,
+      "routePresetColor": 255,
+      "jrPrimaryColor": 2236962,
+      "jrSecondaryColor": 16777215,
+      "railPrimaryColor": 2236962,
+      "railSecondaryColor": 2236962
+    },
+    "layers": [],
+    "crossingRelations": [],
+    "selectedIndex": -1
+  }
+}

@@ -15,7 +15,12 @@ begin
   Result := (Command = 'apply_batch') or (Command = 'replace_document') or
     (Command = 'undo') or (Command = 'redo') or (Command = 'set_reference') or
     (Command = 'clear_reference') or (Command = 'begin_blob') or
-    (Command = 'load_file') or (Command = 'save_copy');
+    (Command = 'load_file') or (Command = 'save_copy') or
+    (Command = 'generation_prepare') or (Command = 'generation_start') or
+    (Command = 'generation_cancel') or (Command = 'generation_submit_result') or
+    (Command = 'generation_apply') or (Command = 'generation_start_image') or
+    (Command = 'generation_submit_image') or (Command = 'generation_trace_image') or
+    (Command = 'generation_prepare_trace') or (Command = 'generation_set_trace_options');
 end;
 function CheckedFileName(Root: TJSONObject): string;
 begin

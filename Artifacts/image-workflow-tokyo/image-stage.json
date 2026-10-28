@@ -1,0 +1,44 @@
+{
+  "state": "image_ready",
+  "message": "① 元地図画像を確認し、よければ「画像から地図データを作成」へ進んでください。",
+  "source": "codex_image_generation",
+  "busy": false,
+  "generation_id": "{C0F5F570-4246-4CD4-995C-7FBFC1E5E5E4}",
+  "image_workflow": true,
+  "has_image": true,
+  "image_sha256": "8bd60beb0c2a6a7cf3a731bcb02a17f63cd29a291d1f1fff72308603315685d4",
+  "can_trace": true,
+  "repair_attempted": false,
+  "can_apply": false,
+  "image": {
+    "blob_id": "{D09AF745-CA81-4290-B714-DCEC647F53C2}",
+    "mime": "image/png",
+    "size": 1778584,
+    "received": 1778584,
+    "sha256": "8bd60beb0c2a6a7cf3a731bcb02a17f63cd29a291d1f1fff72308603315685d4"
+  },
+  "request": {
+    "generation_id": "{C0F5F570-4246-4CD4-995C-7FBFC1E5E5E4}",
+    "place_query": "東京都千代田区 東京駅 丸の内口",
+    "span_m": 1000,
+    "north_clockwise_degrees": 0.0,
+    "canvas_width": 1920,
+    "canvas_height": 1080,
+    "instructions": "横長の簡略案内図。東京駅とJR線、行幸通り・日比谷通り・丸の内仲通り、丸ビル・新丸ビル・KITTEだけを優先。道路と線路のつながりが分かる、文字が少なく見やすい画像にしてください。",
+    "canvas_appearance": {
+      "width": 1920,
+      "height": 1080,
+      "origin": "center",
+      "backgroundColor": 16777215,
+      "transparent": false,
+      "roadPresetColor": 15000804,
+      "riverPresetColor": 15245392,
+      "routePresetColor": 255,
+      "jrPrimaryColor": 2236962,
+      "jrSecondaryColor": 16777215,
+      "railPrimaryColor": 2236962,
+      "railSecondaryColor": 2236962
+    }
+  },
+  "note": "東京駅丸の内口周辺の簡略案内図をPNG画像1枚で作成しました。北を上に、指定の道路・JR線・主要3施設を配置しています。"
+}

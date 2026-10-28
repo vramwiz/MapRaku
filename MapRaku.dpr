@@ -2,6 +2,14 @@
 
 uses
   Vcl.Forms,
+  MapRakuCodexTransport in 'Source\Generation\MapRakuCodexTransport.pas',
+  MapRakuCodexJob in 'Source\Generation\MapRakuCodexJob.pas',
+  MapRakuGenerationContract in 'Source\Generation\MapRakuGenerationContract.pas',
+  MapRakuGenerationSession in 'Source\Generation\MapRakuGenerationSession.pas',
+  MapRakuGenerationForm in 'Source\Generation\MapRakuGenerationForm.pas',
+  MapRakuGenerationImage in 'Source\Generation\MapRakuGenerationImage.pas',
+  MapRakuTraceOptions in 'Source\Generation\MapRakuTraceOptions.pas',
+  MapRakuReferenceView in 'Source\Generation\MapRakuReferenceView.pas',
   MapRakuRenderBuffer in 'Source\Rendering\Buffer\MapRakuRenderBuffer.pas',
   MapRakuPathEditSession in 'Source\Core\Commands\Path\MapRakuPathEditSession.pas',
   MapRakuCrossingGeometry in 'Source\Map\Crossings\MapRakuCrossingGeometry.pas',

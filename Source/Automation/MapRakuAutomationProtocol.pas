@@ -4,12 +4,14 @@ unit MapRakuAutomationProtocol;
 interface
 
 uses
-  MapRakuDocument, MapRakuEditHistory, MapRakuEditorState, MapRakuCanvas;
+  MapRakuDocument, MapRakuEditHistory, MapRakuEditorState, MapRakuCanvas,
+  MapRakuGenerationSession;
 
 // VCLスレッド上で1要求を処理し、必ずJSON応答を返す。
 function HandleMapRakuAutomationRequest(const RequestText: string;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
-  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl = nil): string;
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl = nil;
+  Generation: TMapRakuGenerationSession = nil): string;
 
 implementation
 
@@ -109,6 +111,11 @@ begin
   Commands.Add('save_copy');
   Commands.Add('preview_file');
   Commands.Add('load_file');
+  for var Name in TArray<string>.Create('generation_show','generation_prepare','generation_start',
+    'generation_status','generation_get_request','generation_get_result',
+    'generation_submit_result','generation_cancel','generation_apply','generation_start_image',
+    'generation_get_image','generation_submit_image','generation_trace_image','generation_prepare_trace',
+    'generation_set_trace_options','generation_get_trace_image') do Commands.Add(Name);
   ResultJson.AddPair('commands', Commands);
   ResultJson.AddPair('pipe', SCREEN_LAYOUT_AUTOMATION_PIPE_NAME);
   ResultJson.AddPair('max_image_edge', TJSONNumber.Create(2048));
@@ -374,10 +381,15 @@ end;
 
 function ProcessAutomationRequest(const Command: string; Root: TJSONObject;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
-  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl): string;
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl;
+  Generation: TMapRakuGenerationSession): string;
 begin
   if (Document = nil) or (EditHistory = nil) then
     Exit(ErrorResponse(Command,'editor_unavailable','The MapRaku editor is not ready.'));
+  if Pos('generation_',Command)=1 then begin
+    Require(Generation<>nil, '地名生成の共通セッションがありません。');
+    Exit(Generation.Handle(Command,Root));
+  end;
   if AutomationMutation(Command) and (Command <> 'begin_blob') then begin
     Result := CheckVisualState(Command,Root,Document,Canvas,True);
     if Result <> '' then Exit;
@@ -398,7 +410,8 @@ end;
 // 再送判定を状態検査より先に行い、適用成功後に応答だけ失われた場合も同じ結果を返す。
 function HandleMapRakuAutomationRequest(const RequestText: string;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
-  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl): string;
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl;
+  Generation: TMapRakuGenerationSession): string;
 var Root: TJSONValue; Command,Id: string; Mutating: Boolean;
 begin
   Command := '';
@@ -412,7 +425,7 @@ begin
       Id := Str(Obj(Root),'request_id');
       if Mutating and AutomationSession.Lookup(Id,RequestText,Result) then Exit;
       try
-        Result := ProcessAutomationRequest(Command,Obj(Root),Document,EditHistory,EditorState,Canvas);
+        Result := ProcessAutomationRequest(Command,Obj(Root),Document,EditHistory,EditorState,Canvas,Generation);
       except
         on E: EArgumentException do Result := ErrorResponse(Command,'invalid_argument',E.Message);
         on E: Exception do Result := ErrorResponse(Command,'internal_error',E.Message);

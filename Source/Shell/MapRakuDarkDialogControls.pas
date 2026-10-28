@@ -175,6 +175,7 @@ begin
   end;
   Canvas.Brush.Style := bsClear;
   Canvas.Font.Assign(Font);
+  if not Enabled then Canvas.Font.Color := clGray;
   DrawText(Canvas.Handle, PChar(Caption), Length(Caption), Bounds,
     DT_CENTER or DT_VCENTER or DT_SINGLELINE);
 end;

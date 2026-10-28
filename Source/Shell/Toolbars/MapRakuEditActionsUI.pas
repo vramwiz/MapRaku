@@ -13,6 +13,7 @@ type
   private
     FCanvasSettingsItem: TPanel;
     FCanvasSettingsVisible: Boolean;
+    FGenerationItem: TPanel;
     FDocument: TVectArtDocument;
     FEditorState: TVectArtEditorState;
     FGeometrySettingsEnabled: Boolean;
@@ -21,12 +22,14 @@ type
     FMenu: TVectArtDarkPopupMenu;
     FOnCanvasSettingsRequest: TNotifyEvent;
     FOnGeometrySettingsRequest: TNotifyEvent;
+    FOnGenerationRequest: TNotifyEvent;
     FRedoItem: TPanel;
     FUndoItem: TPanel;
     FFlipHorizontalItem: TPanel;
     FFlipVerticalItem: TPanel;
     FBooleanItems: array[0..3] of TPanel;
     procedure CanvasSettingsClick(Sender: TObject);
+    procedure GenerationClick(Sender: TObject);
     procedure FlipHorizontalClick(Sender: TObject);
     procedure FlipVerticalClick(Sender: TObject);
     procedure GeometrySettingsClick(Sender: TObject);
@@ -57,6 +60,8 @@ type
       read FOnCanvasSettingsRequest write FOnCanvasSettingsRequest;
     property OnGeometrySettingsRequest: TNotifyEvent
       read FOnGeometrySettingsRequest write FOnGeometrySettingsRequest;
+    property OnGenerationRequest: TNotifyEvent
+      read FOnGenerationRequest write FOnGenerationRequest;
   end;
 
 implementation
@@ -81,7 +86,7 @@ var
 begin
   inherited Create(AOwner);
   FMenu := TVectArtDarkPopupMenu.CreateForHosts(Self, AMainForm, AMenuBar,
-    '編集', 0, 36, 210, 320);
+    '編集', 0, 36, 230, 352);
   FUndoItem := NewMenuItem('Undo    Ctrl+Z', 0, UndoClick);
   FRedoItem := NewMenuItem('Redo    Ctrl+Y', 32, RedoClick);
   FFlipHorizontalItem := NewMenuItem('左右反転    Shift+H', 64,
@@ -99,6 +104,7 @@ begin
   FGeometrySettingsEnabled := False;
   FCanvasSettingsItem := NewMenuItem('キャンバスの設定', 288,
     CanvasSettingsClick);
+  FGenerationItem := NewMenuItem('地名から地図を作成...', 320, GenerationClick);
   FCanvasSettingsVisible := True;
 end;
 
@@ -129,6 +135,12 @@ begin
   FMenu.Close;
   if FCanvasSettingsVisible and Assigned(FOnCanvasSettingsRequest) then
     FOnCanvasSettingsRequest(Self);
+end;
+
+procedure TVectArtEditActionsUI.GenerationClick(Sender: TObject);
+begin
+  FMenu.Close;
+  if Assigned(FOnGenerationRequest) then FOnGenerationRequest(Self);
 end;
 
 function TVectArtEditActionsUI.NewMenuItem(const Caption: string;
@@ -209,10 +221,13 @@ procedure TVectArtEditActionsUI.SetCanvasSettingsVisible(
 begin
   FCanvasSettingsVisible := Value;
   FCanvasSettingsItem.Visible := Value;
-  if Value then
-    FMenu.PopupHeight := 320
-  else
-    FMenu.PopupHeight := 288;
+  if Value then begin
+    FGenerationItem.Top := FMenu.Popup.ScaleValue(320);
+    FMenu.PopupHeight := 352;
+  end else begin
+    FGenerationItem.Top := FMenu.Popup.ScaleValue(288);
+    FMenu.PopupHeight := 320;
+  end;
 end;
 
 procedure TVectArtEditActionsUI.SetGeometrySettingsEnabled(

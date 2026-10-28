@@ -15,7 +15,8 @@ begin
     Fields := Fields + 'vertices,width,color,line_cap,'
   else if Kind='symbol' then Fields := Fields + 'symbol,label,x,y,rotation,'
   else if Kind='building' then Fields := Fields + 'x,y,width,height,label,color,text_color,font_size,'
-  else if Kind='text' then Fields := Fields + 'x,y,width,height,text,font,font_size,color,'
+  else if Kind='text' then Fields := Fields + 'x,y,width,height,text,font,font_size,color,rotation,'
+  else if Kind='polygon' then Fields := Fields + 'vertices,color,stroke_color,stroke_width,'
   else if (Kind='rectangle') or (Kind='ellipse') then Fields := Fields + 'x,y,width,height,color,';
   for Pair in S do
     Require(Pos(','+Pair.JsonString.Value+',',Fields) > 0,
@@ -91,6 +92,18 @@ begin
     raise;
   end;
 end;
+function MakePolygon(S: TJSONObject; const Name: string): TMapRakuShapeLayer;
+var Contour: TMapRakuContour;
+begin
+  Contour := Default(TMapRakuContour); Contour.Vertices := ReadAutomationVertices(S);
+  Require(Length(Contour.Vertices)>=3, 'Polygon requires at least three vertices.');
+  Result := TMapRakuShapeLayer.Create(Name,TArray<TMapRakuContour>.Create(Contour));
+  try
+    Result.FillColor := Int(S,'color',$D8D8D8,0,$FFFFFF);
+    Result.StrokeColor := Int(S,'stroke_color',0,0,$FFFFFF);
+    Result.StrokeWidth := Num(S,'stroke_width',0,0,4096);
+  except Result.Free; raise; end;
+end;
 function CreateAutomationLayer(Spec: TJSONObject; Document: TVectArtDocument): TVectArtLayer;
 var Kind, Name: string; X,Y,W,H: Single; Symbol: Integer;
 begin
@@ -110,6 +123,7 @@ begin
     end;
   end
   else if Kind = 'building' then Result := MakeBuilding(Spec,Name)
+  else if Kind = 'polygon' then Result := MakePolygon(Spec,Name)
   else if Kind = 'level_boundary' then Result := TMapRakuLevelBoundaryLayer.Create(Name)
   else begin
     X := Num(Spec,'x',0); Y := Num(Spec,'y',0);
@@ -129,6 +143,8 @@ begin
     Result.Name := Name;
     if Str(Spec,'id') <> '' then Result.PersistentId := Str(Spec,'id');
     Result.Opacity := Num(Spec,'opacity',1,0,1);
+    if (Kind='text') and (Spec.GetValue('rotation')<>nil) then
+      RotateMapRakuLayer(Result,TVectArtRectangleLayer(Result).Bounds.CenterPoint,Num(Spec,'rotation',0,-360,360));
   except
     Result.Free;
     raise;

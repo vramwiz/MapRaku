@@ -5,11 +5,12 @@ interface
 
 uses
   Winapi.Windows, MapRakuDocument, MapRakuEditHistory,
-  MapRakuEditorState, MapRakuCanvas;
+  MapRakuEditorState, MapRakuCanvas, MapRakuGenerationSession;
 
 function StartMapRakuAutomationPipeServer(NotifyWindow: HWND;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
-  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl; out ErrorMessage: string; Hosted: Boolean = False): Boolean;
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl; out ErrorMessage: string;
+  Hosted: Boolean = False; Generation: TMapRakuGenerationSession = nil): Boolean;
 procedure StopMapRakuAutomationPipeServer;
 procedure ProcessMapRakuAutomationPipeMessage(WParam: WPARAM);
 // 表示時に確定したForm Handleを通知先として再設定する。
@@ -30,13 +31,15 @@ type
     FEditHistory: TVectArtEditHistory; // MainForm所有。
     FEditorState: TVectArtEditorState; // MainForm所有。
     FCanvas: TVectArtCanvasControl; // MainForm所有。背景画像の複写に使用する。
+    FGeneration: TMapRakuGenerationSession; // MainForm所有。
     FThread: TPipeServerTThread;
     FPipeName: string;
     procedure Receive(Sender: TObject; const ReceivedStr: string;
       var SendStr: string);
   public
     constructor Create(NotifyWindow: HWND; Document: TVectArtDocument;
-      EditHistory: TVectArtEditHistory; EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl);
+      EditHistory: TVectArtEditHistory; EditorState: TVectArtEditorState;
+      Canvas: TVectArtCanvasControl; Generation: TMapRakuGenerationSession);
     destructor Destroy; override;
     procedure ProcessMessage(WParam: WPARAM);
     procedure UpdateNotifyWindow(NotifyWindow: HWND);
@@ -47,13 +50,15 @@ var
 
 constructor TMapRakuAutomationPipeServer.Create(NotifyWindow: HWND;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
-  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl);
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl;
+  Generation: TMapRakuGenerationSession);
 begin
   inherited Create;
   FDocument := Document;
   FEditHistory := EditHistory;
   FEditorState := EditorState;
   FCanvas := Canvas;
+  FGeneration := Generation;
   FPipeName := '\\.\pipe\' + AutomationPipeShortName;
   FThread := TPipeServerTThread.Create(
     AutomationPipeShortName, PIPE_BUFFER_SIZE, True, 1,
@@ -86,7 +91,7 @@ procedure TMapRakuAutomationPipeServer.Receive(Sender: TObject;
   const ReceivedStr: string; var SendStr: string);
 begin
   SendStr := HandleMapRakuAutomationRequest(ReceivedStr, FDocument,
-    FEditHistory, FEditorState, FCanvas);
+    FEditHistory, FEditorState, FCanvas, FGeneration);
   if TEncoding.UTF8.GetByteCount(SendStr) > PIPE_BUFFER_SIZE then
     SendStr := ErrorResponse('', 'response_too_large', 'Response exceeds 4 MiB; reduce document size.');
 end;
@@ -106,7 +111,8 @@ end;
 
 function StartMapRakuAutomationPipeServer(NotifyWindow: HWND;
   Document: TVectArtDocument; EditHistory: TVectArtEditHistory;
-  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl; out ErrorMessage: string; Hosted: Boolean): Boolean;
+  EditorState: TVectArtEditorState; Canvas: TVectArtCanvasControl; out ErrorMessage: string;
+  Hosted: Boolean; Generation: TMapRakuGenerationSession): Boolean;
 var Token: TGUID;
 begin
   Result := False;
@@ -128,7 +134,7 @@ begin
       AutomationHostKind := 'aviutl2';
     end;
     Server := TMapRakuAutomationPipeServer.Create(NotifyWindow,
-      Document, EditHistory, EditorState, Canvas);
+      Document, EditHistory, EditorState, Canvas, Generation);
     Result := True;
   except
     on E: Exception do

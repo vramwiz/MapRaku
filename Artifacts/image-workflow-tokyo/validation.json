@@ -1,0 +1,15 @@
+{
+  "source_hash_matched": true,
+  "save": "passed",
+  "image_reading": "actual_codex_localImage",
+  "place": "東京都千代田区 東京駅 丸の内口",
+  "undo_redo": "passed",
+  "trace_stage_document_unchanged": true,
+  "source_image_sha256": "8bd60beb0c2a6a7cf3a731bcb02a17f63cd29a291d1f1fff72308603315685d4",
+  "image_stage_document_unchanged": true,
+  "layers": 56,
+  "manual_operation_correction": false,
+  "png_blob": "passed",
+  "image_generation": "actual_codex_native_tool",
+  "adopted_by_ui_ok": true
+}

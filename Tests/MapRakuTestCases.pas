@@ -17,7 +17,7 @@ uses System.SysUtils, System.Types, System.Classes, System.IOUtils, System.JSON,
   MapRakuRecentFiles, MapRakuLayerList, MapRakuLayerRenderer,
   MapRakuPresetThumbnail,
   MapRakuProjectiveTransform, MapRakuSelectionGeometry, MapRakuTestSupport,
-  MapRakuConnectionTests, MapRakuCrossingTests;
+  MapRakuConnectionTests, MapRakuCrossingTests, MapRakuGenerationViewTests, MapRakuEditorRefreshTests;
 type
   TTestLayerList = class(TVectArtLayerListControl)
   public
@@ -471,6 +471,8 @@ begin
   CheckRouteSnapping;
   CheckRouteFollowing;
   CheckRouteGapTolerance;
+  CheckGenerationReferenceView;
+  CheckEditorRefresh;
   RecentIni := TPath.GetFullPath('TestOutput/recent-files-test.ini');
   RecentFiles := TMapRakuRecentFiles.Create;
   ReloadedRecentFiles := TMapRakuRecentFiles.Create;
